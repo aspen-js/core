@@ -649,6 +649,7 @@ function clearTemplateCaches(key) {
   clearChildKeys(key, elementsByKey);
 }
 
+// DEV: is the node arg unecessary?
 function render(key, node, depth = 0, domMutations = []) {
   currentKey = key;
 
@@ -903,19 +904,32 @@ function render(key, node, depth = 0, domMutations = []) {
 // DEV: this should be a week map or something?
 const proxyMeta = new Map();
 
+function ensureProxyMeta(key) {
+  // DEV: you could use getOrInsert
+  proxyMeta.set(key, proxyMeta.get(key) || { subscriptions: [] }); // DEV: is subscriptions the right word?
+}
+
 // DEV: what about reflection?
 
 // DEV: signal liveness is an interesting idea
 const proxyHandler = {
   get(target, prop) {
-    proxyMeta.set(target[prop], proxyMeta.get(target[prop]) || {}); // DEV: hmmm
-    proxyMeta.set(target, proxyMeta.get(target) || {});
+    ensureProxyMeta(target[prop]);
+    ensureProxyMeta(target);
 
     if (proxyMeta.get(target).isLive) {
-      console.log("[get] it's alive!"); // DEV: why is this getting logged so much?
+      console.log("[get] it's alive!");
+
+      const meta = proxyMeta.get(target[prop]);
       if (target[prop] && typeof target[prop] === "object") {
-        proxyMeta.get(target[prop]).isLive = true;
+        meta.isLive = true;
       }
+
+      if (currentKey && !meta.subscriptions.includes(currentKey)) {
+        meta.subscriptions.push(currentKey);
+      }
+
+      // DEV: setup subscriptions here
     } else if (target[prop] && typeof target[prop] === "object") {
       proxyMeta.get(target[prop]).isLive = false;
     }
@@ -928,13 +942,20 @@ const proxyHandler = {
   },
 
   set(target, prop, value) {
-    proxyMeta.set(target[prop], proxyMeta.get(target[prop]) || {}); // DEV: necessary?
+    // DEV: you need to use the path as key, not the value itself
+    const metaKey = target[prop]; // DEV: hmm
+    target[prop] = value;
 
+    ensureProxyMeta(target[prop]); // DEV: necessary, right?
+
+    // DEV: is this right?
+    // - are you off by one level?
     if (proxyMeta.get(target)?.isLive) {
       console.log("[set] it's alive!");
-    }
 
-    target[prop] = value;
+      const meta = proxyMeta.get(metaKey);
+      meta.subscriptions.forEach((key) => render(key, componentsByKey[key]));
+    }
 
     return true;
   },
@@ -964,7 +985,8 @@ function deepProxy(target, handler) {
 // tests for
 
 // DEV: create vs make
-function createSignal(initialValue) {
+// - what about just calling it `signal`
+function signal(initialValue) {
   const target = { $val: initialValue };
   const signal = deepProxy(target, proxyHandler);
 
@@ -997,27 +1019,24 @@ function Heading({ children }) {
   return html`<h1>${children}</h1> `;
 }
 
-let count = 0;
+// DEV: signal vs useSignal?
+// - maybe you don't need use since the only functions that will be called
+//   during the render cycle are hooks?
+// - does solid still call them hooks?
+const count = signal(0);
 
 function Counter() {
   return html`
-    <div>${count}</div>
+    <div>${count.$val}</div>
     <button
       onClick=${() => {
-        count++;
-        render("root.0", Counter);
+        count.$val++;
+        console.log(proxyMeta);
       }}
     >
       ↑
     </button>
-    <button
-      onClick=${() => {
-        count--;
-        render("root.0", Counter);
-      }}
-    >
-      ↓
-    </button>
+    <button onClick=${() => count.$val--}>↓</button>
   `;
 }
 

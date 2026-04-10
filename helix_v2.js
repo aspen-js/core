@@ -911,11 +911,128 @@ function ensureProxyMeta(key) {
 
 // DEV: what about reflection?
 
+// DEV: clear this, move this up
+const signalSubscriptionsByKey = {};
+
+// DEV: use this
+
+class ProxyHandler {
+  #signal;
+  $isRoot = false;
+  $isLive = false;
+
+  // DEV: explain somewhere why it's important that these aren't usually set by
+  // constructor args
+  constructor(signal, { isRoot = false, isLive = false } = {}) {
+    // DEV: better name?
+    this.#signal = signal;
+
+    // DEV: these are not quite right since target in the proxy is the original
+    // object
+    this.$isRoot = isRoot;
+    this.$isLive = isLive;
+
+    if (isRoot) {
+      this.$path = "[root]";
+    }
+  }
+
+  get(target, prop) {
+    console.log("prop:", prop);
+    if (prop === "$isLive") {
+      return this.$isLive;
+    }
+
+    if (prop === "$isRoot" || prop === "$isLive" || prop === "$path") {
+      // DEV: does this wok?
+      return this[prop];
+    }
+
+    const value = target[prop];
+    let proxied;
+
+    if (value && typeof value === "object") {
+      // let proxied;
+
+      // DEV: what about proxies of proxies?
+      if (value instanceof Proxy) {
+        proxied = value;
+      } else {
+        proxied = new Proxy(value, new ProxyHandler(this.#signal));
+      }
+
+      // DEV: use symbols for this kind of thing?
+      proxied.$isLive = this.isLive;
+      proxied.$path = target.$path + "." + prop;
+
+      // target.$isLive = false;
+    } else {
+      // target.$isLive = false;
+      proxied = value;
+    }
+
+    console.log("[get] target:", target);
+    console.log("[get] target.$isLive:", target.$isLive);
+
+    if (target.$isLive && currentKey) {
+      console.log("[get] it's alive!");
+
+      const subs = (signalSubscriptionsByKey[currentKey] ||= []);
+      // DEV: here is where you would set up subscriptions
+
+      if (!subs.includes(this.#signal)) {
+        // DEV: you forgot the path part
+        subs.push(this.#signal);
+      }
+    }
+
+    if (!target.$isRoot) {
+      target.$isLive = false;
+    }
+
+    return proxied;
+  }
+
+  // DEV: no need to allow setting root?
+  set(target, prop, value) {
+    if (prop === "$isRoot" || prop === "$isLive" || prop === "$path") {
+      // DEV: does this wok?
+      this[prop] = value;
+      return true;
+    }
+
+    if (target.$isLive) {
+      console.log("[set] it's alive!");
+
+      // DEV: hmm, for perf, you might need some kind of two-way lookup
+      Object.entries(signalSubscriptionsByKey).forEach(([key, subs]) => {
+        if (subs.includes(this.#signal)) {
+          render(key, templatesByKey[key]);
+        }
+      });
+    }
+
+    // DEV: when would you ever return false?
+    return true;
+  }
+}
+
 // DEV: signal liveness is an interesting idea
 const proxyHandler = {
   get(target, prop) {
     ensureProxyMeta(target[prop]);
     ensureProxyMeta(target);
+
+    // DEV: hmm, actually, I don't think proxy meta is the right approach
+    // - would be very difficult to keep things in sync as values get swapped
+    //   out, you should just use proxied props to store special values
+    // - pretty sure that does what you want
+    // - can you still make the liveness check work?
+
+    proxyMeta.get(target[prop]).path =
+      (proxyMeta.get(target).path || "[root]") + "." + prop;
+
+    console.log("[get] path:", proxyMeta.get(target[prop]).path);
 
     if (proxyMeta.get(target).isLive) {
       console.log("[get] it's alive!");
@@ -925,6 +1042,8 @@ const proxyHandler = {
         meta.isLive = true;
       }
 
+      // DEV: this needs to be keyed in such a way that the keys can be cleared
+      // when a template is unmounted
       if (currentKey && !meta.subscriptions.includes(currentKey)) {
         meta.subscriptions.push(currentKey);
       }
@@ -988,9 +1107,14 @@ function deepProxy(target, handler) {
 // - what about just calling it `signal`
 function signal(initialValue) {
   const target = { $val: initialValue };
-  const signal = deepProxy(target, proxyHandler);
+  // const signal = deepProxy(target, proxyHandler);
 
-  proxyMeta.set(target, { isLive: true, isRoot: true });
+  const signal = new Proxy(
+    target,
+    new ProxyHandler(Symbol(), { isRoot: true, isLive: true }),
+  );
+
+  // proxyMeta.set(target, { isLive: true, isRoot: true });
 
   return signal;
 }
@@ -1031,7 +1155,7 @@ function Counter() {
     <button
       onClick=${() => {
         count.$val++;
-        console.log(proxyMeta);
+        console.log(signalSubscriptionsByKey);
       }}
     >
       ↑

@@ -1198,7 +1198,7 @@ function TextInput() {
 }
 
 const App = () => {
-  // return html`<Counter />`;
+  return html`<Counter />`;
 
   return html`<TodoList />`;
 

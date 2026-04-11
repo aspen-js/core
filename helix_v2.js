@@ -904,18 +904,17 @@ function render(key, node, depth = 0, domMutations = []) {
 // DEV: what about reflection?
 
 // DEV: clear this, move this up
-const signalSubscriptionsByKey = {};
+const signalMapsByKey = {};
 
 class ProxyHandler {
-  #symbol;
+  #signalSymbol;
   $isRoot = false;
   $isLive = false;
 
   // DEV: explain somewhere why it's important that these aren't usually set by
   // constructor args
-  constructor(symbol, { isRoot = false, isLive = false } = {}) {
-    this.#symbol = symbol;
-
+  constructor(signalSymbol, { isRoot = false, isLive = false } = {}) {
+    this.#signalSymbol = signalSymbol;
     this.$isRoot = isRoot;
     this.$isLive = isLive;
 
@@ -932,7 +931,7 @@ class ProxyHandler {
       if (value instanceof Proxy) {
         proxied = value;
       } else {
-        proxied = new Proxy(value, new ProxyHandler(this.#symbol));
+        proxied = new Proxy(value, new ProxyHandler(this.#signalSymbol));
       }
 
       // DEV: use symbols for this kind of thing?
@@ -945,11 +944,15 @@ class ProxyHandler {
     if (this.$isLive && currentKey) {
       console.log("[get] it's alive!");
 
-      const subs = (signalSubscriptionsByKey[currentKey] ||= []);
+      const signalMap = (signalMapsByKey[currentKey] ||= new Map());
+      signalMap.set(
+        this.#signalSymbol,
+        signalMap.get(this.#signalSymbol) || [],
+      );
+      const paths = signalMap.get(this.#signalSymbol);
 
-      if (!subs.includes(this.#symbol)) {
-        // DEV: you forgot the path part
-        subs.push(this.#symbol);
+      if (!paths.includes(this.$path)) {
+        paths.push(this.$path);
       }
     }
 
@@ -971,14 +974,9 @@ class ProxyHandler {
     if (this.$isLive) {
       console.log("[set] it's alive!");
 
-      // DEV: hmm, for perf, you might need some kind of two-way lookup
-      // - this might be a good use case for a signal, you could have a delete
-      //   trap on the template-subscription mapping that would cascade deletes
-      //   to the proxy-template mapping
-      Object.entries(signalSubscriptionsByKey).forEach(([key, subs]) => {
-        console.log(subs);
-        if (subs.includes(this.#symbol)) {
-          console.log("found a match, rendering");
+      Object.entries(signalMapsByKey).forEach(([key, map]) => {
+        const paths = map.get(this.#signalSymbol);
+        if (paths.some((path) => path.startsWith(this.$path))) {
           render(key, componentsByKey[key]);
         }
       });

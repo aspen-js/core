@@ -413,6 +413,8 @@ function parseTemplateInPlace(template) {
 }
 
 let currentKey;
+
+// DEV: shouldn't these be constants?
 let templatesByKey = {};
 let propsByKey = {};
 let componentsByKey = {};
@@ -647,6 +649,8 @@ function clearTemplateCaches(key) {
   clearChildKeys(key, propsByKey);
   clearChildKeys(key, componentsByKey);
   clearChildKeys(key, elementsByKey);
+  clearChildKeys(key, signalMapsByKey);
+  clearChildKeys(key, signalInitsByKey);
 }
 
 // DEV: is the node arg unecessary?
@@ -907,10 +911,6 @@ function render(key, node, depth = 0, domMutations = []) {
 
 // DEV: what about reflection?
 
-// DEV: clear this, move this up
-const signalMapsByKey = {};
-const signalInitsByKey = {};
-
 class ProxyHandler {
   #signalSymbol;
   $isRoot = false;
@@ -929,18 +929,21 @@ class ProxyHandler {
   }
 
   get(target, prop) {
+    // DEV: use symbols?
+    if (prop === "$isRoot" || prop === "$isLive" || prop === "$path") {
+      return this[prop];
+    }
+
     const value = target[prop];
     let proxied;
 
     if (value && typeof value === "object") {
-      // DEV: hmm, instanceof Proxy doesn't work with arrays
       if (typeof value.$isLive === "boolean") {
         proxied = value;
       } else {
         proxied = new Proxy(value, new ProxyHandler(this.#signalSymbol));
       }
 
-      // DEV: use symbols for this kind of thing?
       proxied.$isLive = this.isLive;
       proxied.$path = this.$path + "." + prop;
     } else {
@@ -995,6 +998,10 @@ class ProxyHandler {
 // DEV: signal liveness is the kind of thing that you'll actually want to write
 // tests for
 
+// DEV: move these up?
+const signalMapsByKey = {};
+const signalInitsByKey = {};
+
 function signal(initialValue) {
   if (currentKey) {
     return (signalInitsByKey[currentKey] ||= new Proxy(
@@ -1007,24 +1014,6 @@ function signal(initialValue) {
       new ProxyHandler(Symbol(), { isRoot: true, isLive: true }),
     );
   }
-}
-
-function WithChildren({ children }) {
-  return html`
-    <br />
-    children:
-    <div>${children}</div>
-  `;
-}
-
-function OtherPropsTest({ id, class: className, children }) {
-  return html`<div id=${id} class=${className}>${children}</div> `;
-}
-
-WithChildren.components = { WithChildren, OtherPropsTest };
-
-function Heading({ children }) {
-  return html`<h1>${children}</h1> `;
 }
 
 // DEV: signal vs useSignal?
@@ -1092,8 +1081,6 @@ function TodoList() {
 //   What methods does .splice call on the array?
 // - actually, still might be a bad idea, but you could return a
 //   modified splice method on arrays
-
-// DEV: looks like you have a memory leak somewhere
 
 function Todo({ id, index }) {
   return html`

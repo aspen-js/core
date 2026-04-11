@@ -911,6 +911,12 @@ function render(key, node, depth = 0, domMutations = []) {
 
 // DEV: what about reflection?
 
+// DEV: hmm, current key is set while nothing is being rendered?
+// - you need a stack?
+
+// DEV: could weird behavior you were seeing be due to holes in the array from
+// out of bounds operations?
+
 class ProxyHandler {
   #signalSymbol;
   $isRoot = false;
@@ -985,6 +991,7 @@ class ProxyHandler {
 
       Object.entries(signalMapsByKey).forEach(([key, map]) => {
         const paths = map.get(this.#signalSymbol);
+        // DEV: actually, this is backwards?
         if (paths.some((path) => path.startsWith(this.$path))) {
           render(key, componentsByKey[key]);
         }
@@ -1037,6 +1044,14 @@ const todos = signal(
   })),
 );
 
+// DEV: complicated topic, but I'm wondering if changes on lower levels paths
+// should always trigger re-renders at higher level paths to avoid child
+// comoponents hanging around with stale values
+// - imagining if another component updated todo[3], if we don't do this, then
+//   the Todo component will never actually re-render
+// - would this automatically ensure the cool splice behavior you were thinking of?
+// - does it exacerbate the zombie child problem?
+
 // DEV: possible to get into a weird state where some items can't be deleted
 
 function TodoList() {
@@ -1086,22 +1101,26 @@ function Todo({ id, index }) {
       <input type="text" placeholder=${`To do [${id}]`} />
       <button
         onClick=${() => {
-          const todo = todos.$val[index];
+          if (index > 0) {
+            const todo = todos.$val[index];
 
-          todos.$val.splice(index, 1);
-          todos.$val.splice(index - 1, 0, todo);
-          todos.$val = todos.$val;
+            todos.$val.splice(index, 1);
+            todos.$val.splice(index - 1, 0, todo);
+            todos.$val = todos.$val;
+          }
         }}
       >
         ↑
       </button>
       <button
         onClick=${() => {
-          const todo = todos.$val[index];
+          if (index < todos.$val.length - 1) {
+            const todo = todos.$val[index];
 
-          todos.$val.splice(index, 1);
-          todos.$val.splice(index + 1, 0, todo);
-          todos.$val = todos.$val;
+            todos.$val.splice(index, 1);
+            todos.$val.splice(index + 1, 0, todo);
+            todos.$val = todos.$val;
+          }
         }}
       >
         ↓

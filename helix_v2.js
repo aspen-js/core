@@ -1047,10 +1047,6 @@ function todoId() {
   return ++todoCount;
 }
 
-// let todos = [...Array(3)].map(() => ({
-//   id: todoId(),
-// }));
-
 const todos = signal(
   [...Array(3)].map(() => ({
     id: todoId(),
@@ -1063,82 +1059,78 @@ function TodoList() {
       <h1 style="display: inline">Todos</h1>
       <button
         onClick=${() => {
-          // DEV: hmm
-          // todos.$val.push({ id: todoId() });
           todos.$val = [...todos.$val, { id: todoId() }];
-          // render("root.0", TodoList);
         }}
       >
         +
       </button>
     </div>
-    ${todos.$val.map(
-      (todo) => html(todo.id)`
-        <Todo id=${todo.id} />
-      `,
-    )}
+    ${
+      // DEV: wait a sec, is this the liveness check in action?
+      // - yes
+      // - lots to think about here, I wonder if this has been discussed in the
+      //   Preact community
+      // - does this mean that props passed to array items might be stale?
+      // - no?
+      todos.$val.map(
+        (todo, i) =>
+          html(todo.id)`
+            <Todo id=${todo.id} index=${i} />
+          `,
+      )
+    }
   `;
 }
 
-function Todo({ id }) {
+// DEV: you might see some interesting behavior when splicing an array
+// if you pass the signal to each array item
+// - zombie child problem?
+
+// DEV: would it make sense to count methods like splice as mutations
+// and trigger a render?
+// - maybe not that simple, since you can only see .splice on read.
+//   What methods does .splice call on the array?
+// - actually, still might be a bad idea, but you could return a
+//   modified splice method on arrays
+
+// DEV: looks like you have a memory leak somewhere
+
+function Todo({ id, index }) {
   return html`
     <div>
       <input type="checkbox" />
       <input type="text" placeholder=${`To do [${id}]`} />
       <button
         onClick=${() => {
-          // DEV: hmm, don't think this is going to work
-
-          const index = todos.$val.findIndex((todo) => todo.id === id);
           const todo = todos.$val[index];
 
           todos.$val.splice(index, 1);
           todos.$val.splice(index - 1, 0, todo);
-
           todos.$val = todos.$val;
-
-          // render("root.0", TodoList);
         }}
       >
         ↑
       </button>
       <button
         onClick=${() => {
-          const index = todos.findIndex((todo) => todo.id === id);
-          const todo = todos[index];
+          const todo = todos.$val[index];
 
-          todos.splice(index, 1);
-          todos.splice(index + 1, 0, todo);
-
-          render("root.0", TodoList);
+          todos.$val.splice(index, 1);
+          todos.$val.splice(index + 1, 0, todo);
+          todos.$val = todos.$val;
         }}
       >
         ↓
       </button>
       <button
-        onClick=${() => {
-          // DEV: would be nice to find a more ergonomic way to do things
-          todos.$val.splice(
-            todos.$val.findIndex((todo) => todo.id === id) + 1,
-            0,
-            {
-              id: todoId(),
-            },
-          );
-          todos.$val = todos.$val;
-        }}
+        onClick=${() =>
+          (todos.$val = todos.$val.toSpliced(index + 1, 0, {
+            id: todoId(),
+          }))}
       >
         +
       </button>
-      <button
-        onClick=${() => {
-          todos.splice(
-            todos.findIndex((todo) => todo.id === id),
-            1,
-          );
-          render("root.0", TodoList);
-        }}
-      >
+      <button onClick=${() => (todos.$val = todos.$val.toSpliced(index, 1))}>
         -
       </button>
     </div>

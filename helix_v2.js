@@ -563,12 +563,19 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
 const elementsByKey = {};
 
 function getElementByKey(key) {
-  return (elementsByKey[key] ||= document.evaluate(
+  const el = (elementsByKey[key] ||= document.evaluate(
     `//comment()[contains(string(), " ${key} ")]`,
     document,
     null,
     XPathResult.FIRST_ORDERED_NODE_TYPE,
   ).singleNodeValue?.nextSibling);
+
+  // DEV: don't need this?
+  if (!el.isConnected) {
+    throw new Error("Encountered disconnected element");
+  }
+
+  return el;
 }
 
 // TODO: you shouldn't call document.evaluate for each listener and it might be
@@ -579,11 +586,12 @@ function getElementByKey(key) {
 //   document for just the keys belonging to the template
 
 function hydrate({ listenersByKey }) {
-  Object.entries(listenersByKey).forEach(([key, listeners]) =>
+  Object.entries(listenersByKey).forEach(([key, listeners]) => {
+    console.log("attaching listeners for key", key);
     listeners.forEach(({ event, handler }) =>
       getElementByKey(key).addEventListener(event, handler),
-    ),
-  );
+    );
+  });
 }
 
 /**
@@ -773,9 +781,12 @@ function render(key, node, depth = 0, domMutations = []) {
           if (
             !value.some((item) => item.assignedkey === prevItem.assignedkey)
           ) {
-            domMutations.push(() =>
-              setHtml(slotKey + "." + prevItem.assignedkey, "", "overwrite"),
-            );
+            domMutations.push(() => {
+              const itemKey = slotKey + "." + prevItem.assignedkey;
+              setHtml(itemKey, "", "overwrite");
+              // DEV: right place for this?
+              clearTemplateCaches(itemKey);
+            });
           }
         });
 
@@ -991,10 +1002,18 @@ class ProxyHandler {
         target.splice(...args);
 
         // DEV, hmm
+
         Object.entries(signalMapsByKey).forEach(([key, map]) => {
-          const paths = map.get(symbol);
-          if (paths.some((path) => ownPath.startsWith(path))) {
-            render(key, componentsByKey[key]);
+          // DEV: explain
+          // - memory leak?
+          if (componentsByKey[key]) {
+            const paths = map.get(symbol);
+            // DEV: could this ever result in the same key being rendered
+            // multiple times (here or below)?
+            if (paths.some((path) => ownPath.startsWith(path))) {
+              console.log("[splice] RENDERING KEY", key);
+              render(key, componentsByKey[key]);
+            }
           }
         });
       };
@@ -1021,9 +1040,13 @@ class ProxyHandler {
       // DEV: dry this up?
       // - use a synchronous event emitter?
       Object.entries(signalMapsByKey).forEach(([key, map]) => {
-        const paths = map.get(this.#signalSymbol);
-        if (paths.some((path) => this.$path.startsWith(path))) {
-          render(key, componentsByKey[key]);
+        // DEV: same questions here
+        if (componentsByKey[key]) {
+          const paths = map.get(this.#signalSymbol);
+          if (paths.some((path) => this.$path.startsWith(path))) {
+            console.log("RENDERING KEY", key);
+            render(key, componentsByKey[key]);
+          }
         }
       });
     }
@@ -1038,6 +1061,12 @@ class ProxyHandler {
 // DEV: move these up?
 const signalMapsByKey = {};
 const signalInitsByKey = {};
+
+// DEV: should signal liveness be asymetrical?
+// - maybe access should always create a subscription even if updates don't
+//   trigger renders
+// - your prop tainting idea seems kind of like just another way to impliment
+//   signal subscriptions, but without the cool perf characterisitcs
 
 function signal(initialValue) {
   if (getCurrentKey()) {
@@ -1074,6 +1103,8 @@ const todos = signal(
   })),
 );
 
+// DEV: what is a linked list? double linked list?
+
 function TodoList() {
   return html`
     <div>
@@ -1089,8 +1120,8 @@ function TodoList() {
     ${todos.$val.map(
       (todo, i) =>
         html(todo.id)`
-            <Todo id=${todo.id} index=${i} />
-          `,
+          <Todo id=${todo.id} index=${i} />
+        `,
     )}
   `;
 }

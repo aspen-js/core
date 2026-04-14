@@ -781,12 +781,9 @@ function render(key, node, depth = 0, domMutations = []) {
           if (
             !value.some((item) => item.assignedkey === prevItem.assignedkey)
           ) {
-            domMutations.push(() => {
-              const itemKey = slotKey + "." + prevItem.assignedkey;
-              setHtml(itemKey, "", "overwrite");
-              // DEV: right place for this?
-              clearTemplateCaches(itemKey);
-            });
+            const itemKey = slotKey + "." + prevItem.assignedkey;
+            clearTemplateCaches(itemKey);
+            domMutations.push(() => setHtml(itemKey, "", "overwrite"));
           }
         });
 
@@ -962,12 +959,16 @@ class ProxyHandler {
         proxied = new Proxy(value, new ProxyHandler(this.#signalSymbol));
       }
 
-      proxied.$isLive = this.$isLive; // DEV: whoops
+      proxied.$isLive = this.$isLive;
       proxied.$path = this.$path + "." + prop;
     } else {
       proxied = value;
     }
 
+    // DEV: here is where you would drop the liveness check if you wanted to
+    // make the behavior asymetrical
+    // - how $isLive gets set would still need to be the same for the special
+    //   treatment of splice, etc. to work below
     if (this.$isLive && getCurrentKey()) {
       console.log("[get] it's alive!");
 
@@ -983,11 +984,6 @@ class ProxyHandler {
       }
     }
 
-    // if (prop === "splice") {
-    //   console.log({ isLive: this.$isLive });
-    //   console.log({ array: target });
-    // }
-
     if (this.$isLive && Array.isArray(target) && prop === "splice") {
       console.log("returning special splice");
 
@@ -1001,19 +997,12 @@ class ProxyHandler {
 
         target.splice(...args);
 
-        // DEV, hmm
-
         Object.entries(signalMapsByKey).forEach(([key, map]) => {
-          // DEV: explain
-          // - memory leak?
-          if (componentsByKey[key]) {
-            const paths = map.get(symbol);
-            // DEV: could this ever result in the same key being rendered
-            // multiple times (here or below)?
-            if (paths.some((path) => ownPath.startsWith(path))) {
-              console.log("[splice] RENDERING KEY", key);
-              render(key, componentsByKey[key]);
-            }
+          const paths = map.get(symbol);
+          // DEV: could this ever result in the same key being rendered
+          // multiple times (here or below)?
+          if (paths.some((path) => ownPath.startsWith(path))) {
+            render(key, componentsByKey[key]);
           }
         });
       };
@@ -1040,13 +1029,9 @@ class ProxyHandler {
       // DEV: dry this up?
       // - use a synchronous event emitter?
       Object.entries(signalMapsByKey).forEach(([key, map]) => {
-        // DEV: same questions here
-        if (componentsByKey[key]) {
-          const paths = map.get(this.#signalSymbol);
-          if (paths.some((path) => this.$path.startsWith(path))) {
-            console.log("RENDERING KEY", key);
-            render(key, componentsByKey[key]);
-          }
+        const paths = map.get(this.#signalSymbol);
+        if (paths.some((path) => this.$path.startsWith(path))) {
+          render(key, componentsByKey[key]);
         }
       });
     }
@@ -1144,10 +1129,8 @@ function Todo({ id, index }) {
         onClick=${() => {
           if (index > 0) {
             const todo = todos.$val[index];
-
             todos.$val.splice(index, 1);
             todos.$val.splice(index - 1, 0, todo);
-            // todos.$val = todos.$val;
           }
         }}
       >
@@ -1156,17 +1139,7 @@ function Todo({ id, index }) {
       <button
         onClick=${() => {
           if (index < todos.$val.length - 1) {
-            // const todo = todos.$val[index];
-
-            // todos.$val.splice(index, 1);
-            // todos.$val.splice(index + 1, 0, todo);
-            // todos.$val = todos.$val;
-
-            // DEV: why doesn't this work anymore?
-            // - seems that event listeners are not being properly attached?
-
             const todo = todos.$val[index];
-
             todos.$val.splice(index, 1);
             todos.$val.splice(index + 1, 0, todo);
           }

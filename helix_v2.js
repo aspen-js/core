@@ -1,5 +1,3 @@
-const DEBUG = true;
-
 const phraseTypes = {
   IDENTIFIER: "identifier",
   ATTRIBUTE: "attribute",
@@ -12,6 +10,8 @@ const INVALID_ARRAY_ITEM =
   "[helix] Each element in an array must be wrapped in html(key)`...`";
 const MISSING_ARRAY_ITEM_KEY =
   "[helix] Each element in an array must have a key. Pass one like this: html(key)`...`";
+
+const DEBUG = true;
 
 function debug(...msg) {
   DEBUG && console.log(...msg);
@@ -90,7 +90,52 @@ function mergePhrases(phrases) {
   }, []);
 }
 
-function html(htmlStringsOrConfig, ...interpolations) {
+function populateScopes(scope) {
+  const templates = [];
+  const components = {};
+  const childScopes = [];
+
+  Object.entries(scope).forEach(([name, value]) => {
+    if (isTemplate(value)) {
+      templates.push(value);
+    } else if (typeof value === "function" && /[A-Z]/.test(name)) {
+      components[name] = value;
+    } else if (
+      /[A-Z]/.test(name) &&
+      value &&
+      typeof value === "object" &&
+      value[Symbol.toStringTag] === "Module" &&
+      typeof value[name] === "function"
+    ) {
+      components[name] = value;
+      childScopes.push(value);
+    }
+  });
+
+  templates.forEach((template) => (template.components = components));
+  Object.values(components).forEach(
+    (component) => (component.components = components),
+  );
+
+  childScopes.forEach(populateScopes);
+}
+
+export function createRoot(domNode, scope) {
+  populateScopes(scope);
+
+  return {
+    render(template) {
+      template.components = scope;
+
+      const result = renderToString("root", template);
+      domNode.innerHTML = result.html;
+
+      hydrate(result);
+    },
+  };
+}
+
+export function html(htmlStringsOrConfig, ...interpolations) {
   if (Array.isArray(htmlStringsOrConfig)) {
     const strings = htmlStringsOrConfig;
     return getTemplateBuilder(undefined, strings, ...interpolations)();
@@ -113,7 +158,7 @@ function getTemplateBuilder(key, defaultHtmlStrings, ...defaultInterpolations) {
 
     return {
       _isTemplateNode: true,
-      assignedkey: "i_" + key,
+      assignedkey: key ? "i_" + key : undefined,
       // NOTE: when determining dom changes object equality can be used instead
       // of a hash for templates created when parsing component children
       hash: htmlStringsWithDefaults.join("_"),
@@ -1146,7 +1191,7 @@ class ProxyHandler {
 
 const signalInitsByKey = {};
 
-function signal(initialValue) {
+export function signal(initialValue) {
   if (getCurrentKey()) {
     return (signalInitsByKey[getCurrentKey()] ||= new Proxy(
       { val: initialValue },
@@ -1159,150 +1204,3 @@ function signal(initialValue) {
     );
   }
 }
-
-function Counter() {
-  const $count = signal(0);
-
-  return html`
-    <div>count: ${$count.val}</div>
-    <button onClick=${() => $count.val++}>↑</button>
-    <button onClick=${() => $count.val--}>↓</button>
-  `;
-}
-
-let todoCount = 0;
-function todoId() {
-  return ++todoCount;
-}
-
-const initialTodos = [...Array(3)].map(() => ({
-  id: todoId(),
-  checked: false,
-  text: "",
-}));
-
-function TodoList() {
-  console.log("[TodoList] rendering");
-
-  const $todos = signal(initialTodos);
-
-  return html`
-    <div>
-      <h1 style="display: inline">Todos</h1>
-      <button
-        onClick=${() =>
-          $todos.val.push({ id: todoId(), text: "", checked: false })}
-      >
-        +
-      </button>
-      <button onClick=${() => $todos.val.pop()}>-</button>
-      <button onClick=${() => $todos.val.reverse()}>↑↓</button>
-    </div>
-    ${$todos.val.map(
-      (todo, i) =>
-        html(todo.id)`
-          <Todo id=${todo.id} $todos=${$todos} />
-        `,
-    )}
-  `;
-}
-
-function Todo({ id, $todos }) {
-  console.log("rendering", id);
-
-  const index = $todos.val.findIndex((todo) => todo.id === id);
-  const $todo = $todos.val[index];
-
-  return html`
-    <div>
-      <input
-        type="checkbox"
-        checked=${$todo.checked}
-        onInput=${(e) => ($todo.checked = e.target.checked)}
-      />
-      <input
-        type="text"
-        placeholder=${`To do [${id}]`}
-        value=${$todo.text}
-        onInput=${(e) => ($todo.text = e.target.value)}
-      />
-      <button
-        onClick=${() =>
-          $todos.val.splice(index + 1, 0, {
-            id: todoId(),
-            text: "",
-            checked: false,
-          })}
-      >
-        +
-      </button>
-      <button
-        onClick=${() => {
-          console.log("stack:", keyStack);
-          $todos.val.splice(index, 1);
-        }}
-      >
-        -
-      </button>
-    </div>
-  `;
-}
-
-TodoList.components = { Todo };
-
-function Accordion({ title, description }) {
-  const $expanded = signal(true);
-
-  return html`
-    <div>
-      <div>
-        <h2 style="display: inline">${title}</h2>
-        <button onclick=${() => ($expanded.val = !$expanded.val)}>
-          ${$expanded.val ? "x" : "+"}
-        </button>
-      </div>
-      ${$expanded.val && html`<p>${description}</p>`}
-    </div>
-  `;
-}
-
-function TextInput() {
-  const $value = signal("");
-
-  return html`
-    <input
-      value=${$value.val}
-      oninput=${(e) => ($value.val = e.target.value)}
-    />
-    <button onclick=${() => ($value.val = "")}>X</button>
-  `;
-}
-
-const App = () => {
-  return html`<Counter />`;
-
-  return html`<TodoList />`;
-
-  return html`<TextInput />`;
-
-  return html`
-    <Accordion
-      title="Hello world"
-      description="Lorem ipsum dolor sit amet. The quick brown fox jumped over the lazy dog."
-    />
-  `;
-};
-
-App.components = {
-  Counter,
-  Todo,
-  TodoList,
-  Accordion,
-  TextInput,
-};
-
-const result = renderToString("root", App);
-const root = document.getElementById("root");
-
-root.innerHTML = result.html;
-hydrate(result);

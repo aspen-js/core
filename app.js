@@ -1,19 +1,9 @@
-import helix, { useSignal } from "./helix.js";
-
-export const hlx = helix();
+import { html, signal } from "./helix_v2.js";
 
 export function Counter() {
-  const count = useSignal(0);
+  const $count = signal(0);
 
-  return hlx`
-    <div>${count.value}</div>
-    <button onclick=${() => count.value++}>↑</button>
-    <button onclick=${() => count.value--}>↓</button>
-  `;
-}
-
-export function App() {
-  return hlx`
-    <Counter />
+  return html`
+    <button onclick=${() => $count.val++}>count: ${$count.val}</button>
   `;
 }

@@ -2,7 +2,11 @@
 <html>
   <head>
     <script type="module">
-      import * as v2 from "./helix_v2.js";
+      import { createRoot, html } from "./helix_v2.js";
+      import * as app from "./app.js";
+
+      const root = createRoot(document.getElementById("root"), app);
+      root.render(html`<Counter />`);
     </script>
   </head>
   <body>

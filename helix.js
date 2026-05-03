@@ -130,7 +130,7 @@ export function createRoot(domNode, scope) {
       const result = renderToString("root", template);
       domNode.innerHTML = result.html;
 
-      hydrate(result);
+      hydrate("root", result);
     },
   };
 }
@@ -474,6 +474,8 @@ function parseTemplateInPlace(template) {
           .toSpliced(attrStart, attrName.length + 1)
           .join("");
 
+        getIdentifiers().at(-1).hasEvent = true;
+
         templateStack.at(-1).listeners.push({
           interpolationIndex: i,
           event: attrName.slice(2).toLowerCase(),
@@ -543,14 +545,19 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
     switch (phrase.type) {
       case phraseTypes.IDENTIFIER:
         {
-          result.html += `<!-- ${
-            key + "." + template.identifiers[phrase.index].suffix
+          const identifier = template.identifiers[phrase.index];
+
+          result.html += `<!-- ${identifier.hasEvent ? "evt " : ""}${
+            key + "." + identifier.suffix
           } -->`;
         }
         break;
       case phraseTypes.HTML:
         result.html += phrase.value;
         break;
+      // TODO: Slicing large strings seems to take a long time
+      // - you should be able to work around this by making some adjustments to
+      //   the parsing logic
       case phraseTypes.ATTRIBUTE:
         {
           const attribute = template.attributes[phrase.index];
@@ -677,19 +684,28 @@ function getElementByKey(key) {
   return el;
 }
 
-// TODO: you shouldn't call document.evaluate for each listener and it might be
-// better to attach listeners once you're done with other dom mutations
-// - you can prepend "evt " to keys with listeners and then query the document
-//   for all of those
-// - when attaching listeners for a template you might be able to query the
-//   document for just the keys belonging to the template
-
-function hydrate({ listenersByKey }) {
-  Object.entries(listenersByKey).forEach(([key, listeners]) =>
-    listeners.forEach(({ event, handler }) =>
-      getElementByKey(key).addEventListener(event, handler),
-    ),
+// TODO: Try event delegation
+// - might be more memory efficient since you wouldn't have so many listeners
+// - you wouldn't need document.evaluate at all
+function hydrate(key, { listenersByKey }) {
+  const nodeSet = document.evaluate(
+    `//comment()[contains(string(), " evt ${key}")]`,
+    document,
+    null,
+    XPathResult.UNORDERED_NODE_ITERATOR_TYPE,
   );
+
+  let node;
+  while ((node = nodeSet.iterateNext())) {
+    const [, key] = node.nodeValue.trim().split(" ");
+    const listeners = listenersByKey[key];
+    const element = node.nextSibling;
+
+    // TODO: Why is listeners sometimes undefined?
+    listeners?.forEach(({ event, handler }) =>
+      element.addEventListener(event, handler),
+    );
+  }
 }
 
 /**
@@ -813,7 +829,7 @@ function render(key, node, depth = 0, domMutations = []) {
 
     domMutations.push(() => {
       setHtml(key, result.html);
-      hydrate(result);
+      hydrate(key, result);
     });
 
     if (depth === 0 && domMutations.length) {
@@ -899,13 +915,15 @@ function render(key, node, depth = 0, domMutations = []) {
           const itemKey = slotKey + "." + item.assignedkey;
           const result = renderToString(itemKey, item);
 
+          // TODO: One big dom update would be faster than a bunch of little
+          // ones
           domMutations.push(() => {
             setHtml(
               slotKey,
               `<!-- ${itemKey} -->` + result.html + `<!-- ${itemKey} -->`,
               "insert",
             );
-            hydrate(result);
+            hydrate(itemKey, result);
           });
         });
       } else {
@@ -948,7 +966,7 @@ function render(key, node, depth = 0, domMutations = []) {
                 setHtml(slotKey, itemHtml, "insert");
               }
 
-              hydrate(result);
+              hydrate(itemKey, result);
             });
           } else if (
             !isTemplateMatch(prevItem, item) ||

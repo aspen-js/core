@@ -31,16 +31,15 @@ export function TodoList() {
     ${$todos.val.map(
       (todo, i) =>
         html(todo.id)`
-          <Todo id=${todo.id} $todos=${$todos} />
+          <Todo id=${todo.id} $todos=${$todos} index=${i} />
         `,
     )}
   `;
 }
 
-export function Todo({ id, $todos }) {
+export function Todo({ id, $todos, index }) {
   console.log(`[Todo ${id}] rendering`);
 
-  const index = $todos.val.findIndex((todo) => todo.id === id);
   const $todo = $todos.val[index];
 
   return html`

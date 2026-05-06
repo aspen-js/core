@@ -60,7 +60,11 @@ function isPlainObject(value) {
   return prototype === null || prototype === Object.prototype;
 }
 
-function isAttrTruthy(value) {
+/**
+ * Intentionally counts "" as truthy since that is used to indicate an
+ * attribute value of true in html
+ */
+function isHtmlTruthy(value) {
   if (value === false || value === undefined || value === null) {
     return false;
   }
@@ -203,10 +207,6 @@ function parseTemplateInPlace(template) {
 
   const templateStack = [template];
 
-  function prevPhrase() {
-    return templateStack.at(-1).parsedHtmlPhrases.at(-1);
-  }
-
   function pushPhrase(phrase) {
     templateStack.at(-1).parsedHtmlPhrases.push(phrase);
   }
@@ -225,8 +225,9 @@ function parseTemplateInPlace(template) {
     }
 
     let unparsedFragment = fragment;
+
     while (unparsedFragment.length) {
-      let controlCharsIndex = unparsedFragment.split("").findIndex(
+      const controlCharsIndex = unparsedFragment.split("").findIndex(
         (char, i) =>
           // Opening tag start
           (!isOpeningTag &&
@@ -235,7 +236,7 @@ function parseTemplateInPlace(template) {
             unparsedFragment[i + 1] !== "/") ||
           // Attribute start or end
           (isOpeningTag && char === '"') ||
-          // Closing tag start (only matters for component tags)
+          // Closing tag start
           (templateStack.length > 1 &&
             !isOpeningTag &&
             !isAttr &&
@@ -245,16 +246,105 @@ function parseTemplateInPlace(template) {
           (((isOpeningTag && !isAttr) || isClosingTag) && char === ">"),
       );
 
-      if (controlCharsIndex < 0 && !isComponentTag) {
-        pushPhrase({ type: phraseTypes.HTML, value: unparsedFragment });
+      const controlChars =
+        controlCharsIndex < 0
+          ? undefined
+          : unparsedFragment[controlCharsIndex] === "<" &&
+              unparsedFragment[controlCharsIndex + 1] === "/"
+            ? "</"
+            : unparsedFragment[controlCharsIndex];
+
+      if (!controlChars) {
+        // Handle interpolated component props
+        if (isComponentTag && isOpeningTag && fragment.endsWith("=")) {
+          templateStack.at(-1).props.push({
+            identifierIndex: getIdentifiers().length - 1,
+            name: fragment.slice(fragment.lastIndexOf(" ") + 1, -1),
+            interpolationIndex: i,
+          });
+        }
+        // Handle interpolated attributes and inline event listeners
+        else if (
+          isOpeningTag &&
+          !isComponentTag &&
+          unparsedFragment.endsWith("=")
+        ) {
+          const phrases = templateStack.at(-1).parsedHtmlPhrases;
+          const tagStart = phrases.findLastIndex((phrase) => phrase.tagStart);
+
+          if (
+            !phrases[tagStart - 1] ||
+            phrases[tagStart - 1].type !== phraseTypes.IDENTIFIER
+          ) {
+            getIdentifiers().push({ suffix });
+            suffix++;
+
+            phrases.splice(tagStart, 0, {
+              type: phraseTypes.IDENTIFIER,
+              index: getIdentifiers().length - 1,
+            });
+          }
+
+          const attrStart = unparsedFragment.lastIndexOf(" ") + 1;
+          const attrName = unparsedFragment.slice(attrStart, -1);
+
+          pushPhrase({
+            type: phraseTypes.HTML,
+            value: unparsedFragment.slice(0, attrStart),
+          });
+
+          if (attrName.startsWith("on")) {
+            getIdentifiers().at(-1).hasEvent = true;
+
+            templateStack.at(-1).listeners.push({
+              interpolationIndex: i,
+              event: attrName.slice(2).toLowerCase(),
+              identifierIndex: getIdentifiers().length - 1,
+            });
+          } else {
+            templateStack.at(-1).attributes.push({
+              name: attrName,
+              interpolationIndex: i,
+              identifierIndex: getIdentifiers().length - 1,
+            });
+
+            pushPhrase({
+              type: phraseTypes.ATTRIBUTE,
+              index: templateStack.at(-1).attributes.length - 1,
+            });
+          }
+        }
+        // Handle slots
+        else if (
+          !isOpeningTag &&
+          !isClosingTag &&
+          i !== template.htmlStrings.length - 1
+        ) {
+          pushPhrase({ type: phraseTypes.HTML, value: unparsedFragment });
+
+          getIdentifiers().push({ suffix });
+          suffix++;
+
+          pushPhrase({
+            type: phraseTypes.IDENTIFIER,
+            index: getIdentifiers().length - 1,
+          });
+
+          templateStack.at(-1).slots.push({
+            interpolationIndex: i,
+            identifierIndex: getIdentifiers().length - 1,
+          });
+
+          pushPhrase({
+            type: phraseTypes.SLOT,
+            index: templateStack.at(-1).slots.length - 1,
+          });
+        } else {
+          pushPhrase({ type: phraseTypes.HTML, value: unparsedFragment });
+        }
+
         break;
       }
-
-      let controlChars =
-        unparsedFragment[controlCharsIndex] === "<" &&
-        unparsedFragment[controlCharsIndex + 1] === "/"
-          ? "</"
-          : unparsedFragment[controlCharsIndex];
 
       switch (controlChars) {
         // Handle tag start
@@ -275,13 +365,10 @@ function parseTemplateInPlace(template) {
               type: phraseTypes.IDENTIFIER,
               index: getIdentifiers().length - 1,
             });
-          }
 
-          if (isComponentTag) {
             pushPhrase({
               type: phraseTypes.COMPONENT,
               tagStart: true,
-              value: "<",
               tagName: unparsedFragment.slice(
                 controlCharsIndex + 1,
                 controlCharsIndex +
@@ -293,8 +380,6 @@ function parseTemplateInPlace(template) {
                     // component names
                     .findIndex((char) => !/[a-z0-9]/i.test(char)),
               ),
-              isOpeningTag: true,
-              value: "",
             });
           } else {
             pushPhrase({ type: phraseTypes.HTML, tagStart: true, value: "<" });
@@ -400,99 +485,9 @@ function parseTemplateInPlace(template) {
           break;
       }
 
-      unparsedFragment = controlChars
-        ? unparsedFragment.slice(controlCharsIndex + controlChars.length)
-        : "";
-
-      // Handle component props and interpolated component attributes
-      if (
-        !unparsedFragment &&
-        isComponentTag &&
-        isOpeningTag &&
-        prevPhrase().type === phraseTypes.COMPONENT &&
-        fragment.endsWith("=")
-      ) {
-        templateStack.at(-1).props.push({
-          identifierIndex: getIdentifiers().length - 1,
-          name: fragment.slice(fragment.lastIndexOf(" ") + 1, -1),
-          interpolationIndex: i,
-        });
-      }
-    }
-
-    // Handle slots, interpolated non-component attributes, and inline event
-    // listeners
-    if (
-      !isOpeningTag &&
-      !isClosingTag &&
-      i !== template.htmlStrings.length - 1
-    ) {
-      getIdentifiers().push({ suffix });
-      suffix++;
-
-      pushPhrase({
-        type: phraseTypes.IDENTIFIER,
-        index: getIdentifiers().length - 1,
-      });
-
-      templateStack.at(-1).slots.push({
-        interpolationIndex: i,
-        identifierIndex: getIdentifiers().length - 1,
-      });
-      pushPhrase({
-        type: phraseTypes.SLOT,
-        index: templateStack.at(-1).slots.length - 1,
-        type: "slot",
-      });
-    } else if (isOpeningTag && !isComponentTag) {
-      const phrases = templateStack.at(-1).parsedHtmlPhrases;
-      const tagStart = phrases.findLastIndex((phrase) => phrase.tagStart);
-
-      if (
-        !phrases[tagStart - 1] ||
-        phrases[tagStart - 1].type !== phraseTypes.IDENTIFIER
-      ) {
-        getIdentifiers().push({ suffix });
-        suffix++;
-
-        phrases.splice(tagStart, 0, {
-          type: phraseTypes.IDENTIFIER,
-          index: getIdentifiers().length - 1,
-        });
-      }
-
-      const attrStart =
-        prevPhrase()
-          .value.split("")
-          .findLastIndex((char) => char === " ") + 1;
-      const attrName = prevPhrase().value.slice(attrStart, -1);
-
-      // Strip out inline event listeners so they can be attached later
-      if (attrName.startsWith("on")) {
-        prevPhrase().value = prevPhrase()
-          .value.split("")
-          .toSpliced(attrStart, attrName.length + 1)
-          .join("");
-
-        getIdentifiers().at(-1).hasEvent = true;
-
-        templateStack.at(-1).listeners.push({
-          interpolationIndex: i,
-          event: attrName.slice(2).toLowerCase(),
-          identifierIndex: getIdentifiers().length - 1,
-        });
-      } else {
-        templateStack.at(-1).attributes.push({
-          name: attrName,
-          interpolationIndex: i,
-          identifierIndex: getIdentifiers().length - 1,
-        });
-        pushPhrase({
-          type: phraseTypes.ATTRIBUTE,
-          index: templateStack.at(-1).attributes.length - 1,
-          type: "attribute",
-        });
-      }
+      unparsedFragment = unparsedFragment.slice(
+        controlCharsIndex + controlChars.length,
+      );
     }
   });
 
@@ -564,16 +559,16 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
           const value = template.interpolations[attribute.interpolationIndex];
 
           if (value === true) {
-            // Truncate true boolean attributes to just the name
-            result.html = result.html.slice(0, -1);
-          } else if (!isAttrTruthy(value)) {
-            // Strip out false or nullish attributes
-            result.html = result.html.slice(
-              0,
-              result.html.length - attribute.name.length - 1,
-            );
-          } else {
-            result.html += `"${escapeHtml(value)}"`;
+            // Including only the name is the proper way to indicate an
+            // attribute value of true in html
+            result.html += attribute.name;
+          } else if (
+            isHtmlTruthy(value) &&
+            // Don't include inline event values as those are attached with
+            // addEventListener
+            !attribute.name.startsWith("on")
+          ) {
+            result.html += `${attribute.name}="${escapeHtml(value)}"`;
           }
         }
         break;
@@ -992,7 +987,7 @@ function render(key, node, depth = 0, domMutations = []) {
           key + "." + template.identifiers[attr.identifierIndex].suffix,
         );
 
-        if (!isAttrTruthy(attrValue)) {
+        if (!isHtmlTruthy(attrValue)) {
           element.removeAttribute(attr.name);
         } else if (attrValue === true) {
           element.setAttribute(attr.name, "");
@@ -1003,9 +998,9 @@ function render(key, node, depth = 0, domMutations = []) {
         if (element.tagName === "INPUT") {
           if (
             attr.name === "checked" &&
-            element.checked !== isAttrTruthy(attrValue)
+            element.checked !== isHtmlTruthy(attrValue)
           ) {
-            element.checked = isAttrTruthy(attrValue);
+            element.checked = isHtmlTruthy(attrValue);
           } else if (attr.name === "value" && element.value !== attrValue) {
             element.value = attrValue;
           }

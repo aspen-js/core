@@ -915,8 +915,8 @@ function render(key, node, depth = 0, domMutations = []) {
               html: result.html + `<!-- ${itemKey} -->`,
               listenersByKey: result.listenersByKey,
             });
-
             currentResult.html += `<!-- ${itemKey} -->`;
+
             return currentResult;
           },
           { html: "", listenersByKey: {} },

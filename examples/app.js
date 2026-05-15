@@ -1,12 +1,14 @@
-import { html, signal } from "./helix.js";
+import { html, signal } from "helix";
 
-export * as TodoList from "./todo-list.js";
+export * from "./todo-list.js";
 
 export function Counter() {
   const $count = signal(0);
 
   return html`
-    <button onclick=${() => $count.val++}>count: ${$count.val}</button>
+    <div>${$count.val}</div>
+    <button onclick=${() => $count.val++}>↑</button>
+    <button onclick=${() => $count.val--}>↓</button>
   `;
 }
 

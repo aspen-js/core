@@ -1,45 +1,50 @@
 # Helix
 
-Helix is a modern, lightweight JSX/React alternative that does not require a
-compiler and can run directly in the browser.
+Helix is a lightweight JSX/React alternative that does not require a compiler,
+can run directly in the browser, and is intended to be used without a bundler.
 
 > ⚠️ Warning
 >
-> This project is not production ready. It is under active development and the
-> documentation may be out of date.
+> This project is not production ready. The documentation may be incomplete or
+> out of date and the API may change.
 
-## Getting started
+## Quick start
 
-In `app.js` add:
+Create a new directory and in `app.js` add:
 
 ```javascript
-import { helix, useSignal } from "./helix.js";
-
-export const hlx = helix();
+import { html, signal } from "helix";
 
 export function Counter() {
-  const count = useSignal(0);
+  const $count = signal(0);
 
-  return hlx`
-    <div>${count.value}</div>
-    <button onclick=${() => count.value++}>↑</button>
-    <button onclick=${() => count.value--}>↓</button>
+  return html`
+    <div>${$count.val}</div>
+    <button onclick=${() => $count.val++}>↑</button>
+    <button onclick=${() => $count.val--}>↓</button>
   `;
 }
 ```
 
-And in `index.html` add:
+In `index.html` add:
 
 ```html
 <!DOCTYPE html>
 <html>
   <head>
+    <script type="importmap">
+      {
+        "imports": {
+          "helix": "https://cdn.jsdelivr.net/gh/Esarhaddon/helix@master/helix.min.js"
+        }
+      }
+    </script>
     <script type="module">
-      import { createRoot } from "./helix.js";
+      import { createRoot, html } from "helix";
       import * as app from "./app.js";
 
       const root = createRoot(document.getElementById("root"), app);
-      root.render(app.Counter);
+      root.render(html`<Counter />`);
     </script>
   </head>
   <body>
@@ -48,4 +53,5 @@ And in `index.html` add:
 </html>
 ```
 
-Run `npx live-server .` and visit your new Helix app at `localhost:8080`.
+To launch, cd into your new directory and run `npx serve` or `npx live-server`
+or similar.

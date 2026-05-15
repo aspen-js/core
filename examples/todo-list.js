@@ -1,4 +1,4 @@
-import { signal, html } from "./helix.js";
+import { signal, html } from "helix";
 
 let todoCount = 0;
 function todoId() {

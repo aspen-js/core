@@ -1,8 +1,14 @@
-<!doctype html>
 <html>
   <head>
+    <script type="importmap">
+      {
+        "imports": {
+          "helix": "https://cdn.jsdelivr.net/gh/Esarhaddon/helix@master/helix.min.js"
+        }
+      }
+    </script>
     <script type="module">
-      import { createRoot, html } from "./helix.js";
+      import { createRoot, html } from "helix";
       import * as app from "./app.js";
 
       const root = createRoot(document.getElementById("root"), app);

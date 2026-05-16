@@ -227,7 +227,7 @@ function parseTemplateInPlace(template) {
     let unparsedFragment = fragment;
 
     while (unparsedFragment.length) {
-      const controlCharsIndex = unparsedFragment.split("").findIndex(
+      const specialCharsIndex = unparsedFragment.split("").findIndex(
         (char, i) =>
           // Opening tag start
           (!isOpeningTag &&
@@ -246,117 +246,29 @@ function parseTemplateInPlace(template) {
           (((isOpeningTag && !isAttr) || isClosingTag) && char === ">"),
       );
 
-      const controlChars =
-        controlCharsIndex < 0
+      const specialChars =
+        specialCharsIndex < 0
           ? undefined
-          : unparsedFragment[controlCharsIndex] === "<" &&
-              unparsedFragment[controlCharsIndex + 1] === "/"
+          : unparsedFragment[specialCharsIndex] === "<" &&
+              unparsedFragment[specialCharsIndex + 1] === "/"
             ? "</"
-            : unparsedFragment[controlCharsIndex];
+            : unparsedFragment[specialCharsIndex];
 
-      if (!controlChars) {
-        // Handle interpolated component props
-        if (isComponentTag && isOpeningTag && fragment.endsWith("=")) {
-          templateStack.at(-1).props.push({
-            identifierIndex: getIdentifiers().length - 1,
-            name: fragment.slice(fragment.lastIndexOf(" ") + 1, -1),
-            interpolationIndex: i,
-          });
-        }
-        // Handle interpolated attributes and inline event listeners
-        else if (
-          isOpeningTag &&
-          !isComponentTag &&
-          unparsedFragment.endsWith("=")
-        ) {
-          const phrases = templateStack.at(-1).parsedHtmlPhrases;
-          const tagStart = phrases.findLastIndex((phrase) => phrase.tagStart);
-
-          if (
-            !phrases[tagStart - 1] ||
-            phrases[tagStart - 1].type !== phraseTypes.IDENTIFIER
-          ) {
-            getIdentifiers().push({ suffix });
-            suffix++;
-
-            phrases.splice(tagStart, 0, {
-              type: phraseTypes.IDENTIFIER,
-              index: getIdentifiers().length - 1,
-            });
-          }
-
-          const attrStart = unparsedFragment.lastIndexOf(" ") + 1;
-          const attrName = unparsedFragment.slice(attrStart, -1);
-
-          pushPhrase({
-            type: phraseTypes.HTML,
-            value: unparsedFragment.slice(0, attrStart),
-          });
-
-          if (attrName.startsWith("on")) {
-            getIdentifiers().at(-1).hasEvent = true;
-
-            templateStack.at(-1).listeners.push({
-              interpolationIndex: i,
-              event: attrName.slice(2).toLowerCase(),
-              identifierIndex: getIdentifiers().length - 1,
-            });
-          } else {
-            templateStack.at(-1).attributes.push({
-              name: attrName,
-              interpolationIndex: i,
-              identifierIndex: getIdentifiers().length - 1,
-            });
-
-            pushPhrase({
-              type: phraseTypes.ATTRIBUTE,
-              index: templateStack.at(-1).attributes.length - 1,
-            });
-          }
-        }
-        // Handle slots
-        else if (
-          !isOpeningTag &&
-          !isClosingTag &&
-          i !== template.htmlStrings.length - 1
-        ) {
-          pushPhrase({ type: phraseTypes.HTML, value: unparsedFragment });
-
-          getIdentifiers().push({ suffix });
-          suffix++;
-
-          pushPhrase({
-            type: phraseTypes.IDENTIFIER,
-            index: getIdentifiers().length - 1,
-          });
-
-          templateStack.at(-1).slots.push({
-            interpolationIndex: i,
-            identifierIndex: getIdentifiers().length - 1,
-          });
-
-          pushPhrase({
-            type: phraseTypes.SLOT,
-            index: templateStack.at(-1).slots.length - 1,
-          });
-        } else {
-          pushPhrase({ type: phraseTypes.HTML, value: unparsedFragment });
-        }
-
+      if (!specialChars) {
         break;
       }
 
-      switch (controlChars) {
+      switch (specialChars) {
         // Handle tag start
         case "<":
-          if (controlCharsIndex !== 0) {
+          if (specialCharsIndex !== 0) {
             pushPhrase({
               type: phraseTypes.HTML,
-              value: unparsedFragment.slice(0, controlCharsIndex),
+              value: unparsedFragment.slice(0, specialCharsIndex),
             });
           }
 
-          if (/[A-Z]/.test(unparsedFragment[controlCharsIndex + 1])) {
+          if (/[A-Z]/.test(unparsedFragment[specialCharsIndex + 1])) {
             isComponentTag = true;
             getIdentifiers().push({ suffix });
             suffix++;
@@ -370,11 +282,11 @@ function parseTemplateInPlace(template) {
               type: phraseTypes.COMPONENT,
               tagStart: true,
               tagName: unparsedFragment.slice(
-                controlCharsIndex + 1,
-                controlCharsIndex +
+                specialCharsIndex + 1,
+                specialCharsIndex +
                   1 +
                   unparsedFragment
-                    .slice(controlCharsIndex + 1)
+                    .slice(specialCharsIndex + 1)
                     .split("")
                     // TODO: figure out what characters should be allowed in
                     // component names
@@ -392,21 +304,21 @@ function parseTemplateInPlace(template) {
           if (!isComponentTag) {
             pushPhrase({
               type: phraseTypes.HTML,
-              value: unparsedFragment.slice(0, controlCharsIndex + 1),
+              value: unparsedFragment.slice(0, specialCharsIndex + 1),
             });
           } else if (!isAttr) {
             const name = unparsedFragment.slice(
               unparsedFragment
-                .slice(0, controlCharsIndex - 1)
+                .slice(0, specialCharsIndex - 1)
                 .lastIndexOf(" ") + 1,
-              controlCharsIndex - 1,
+              specialCharsIndex - 1,
             );
 
             const value = unparsedFragment.slice(
-              controlCharsIndex + 1,
-              controlCharsIndex +
+              specialCharsIndex + 1,
+              specialCharsIndex +
                 1 +
-                unparsedFragment.slice(controlCharsIndex + 1).indexOf('"'),
+                unparsedFragment.slice(specialCharsIndex + 1).indexOf('"'),
             );
 
             templateStack.at(-1).props.push({
@@ -420,7 +332,7 @@ function parseTemplateInPlace(template) {
           break;
         // Handle closing tag start
         case "</":
-          if (/[A-Z]/.test(unparsedFragment[controlCharsIndex + 2])) {
+          if (/[A-Z]/.test(unparsedFragment[specialCharsIndex + 2])) {
             isComponentTag = true;
           }
 
@@ -428,7 +340,7 @@ function parseTemplateInPlace(template) {
             type: phraseTypes.HTML,
             value: unparsedFragment.slice(
               0,
-              isComponentTag ? controlCharsIndex : controlCharsIndex + 2,
+              isComponentTag ? specialCharsIndex : specialCharsIndex + 2,
             ),
           });
 
@@ -447,11 +359,11 @@ function parseTemplateInPlace(template) {
             // TODO: handle self closing tags
             pushPhrase({
               type: phraseTypes.HTML,
-              value: unparsedFragment.slice(0, controlCharsIndex + 1),
+              value: unparsedFragment.slice(0, specialCharsIndex + 1),
             });
           } else if (
             isOpeningTag &&
-            unparsedFragment[controlCharsIndex - 1] !== "/"
+            unparsedFragment[specialCharsIndex - 1] !== "/"
           ) {
             templateStack.at(-1).props.push({
               identifierIndex: getIdentifiers().length - 1,
@@ -471,7 +383,7 @@ function parseTemplateInPlace(template) {
             templateStack.push(templateStack.at(-1).props.at(-1).value);
           } else if (
             isClosingTag ||
-            unparsedFragment[controlCharsIndex - 1] === "/"
+            unparsedFragment[specialCharsIndex - 1] === "/"
           ) {
             pushPhrase({
               type: phraseTypes.IDENTIFIER,
@@ -486,8 +398,96 @@ function parseTemplateInPlace(template) {
       }
 
       unparsedFragment = unparsedFragment.slice(
-        controlCharsIndex + controlChars.length,
+        specialCharsIndex + specialChars.length,
       );
+    }
+
+    // Handle interpolated component props
+    if (isComponentTag && isOpeningTag && fragment.endsWith("=")) {
+      templateStack.at(-1).props.push({
+        identifierIndex: getIdentifiers().length - 1,
+        name: fragment.slice(fragment.lastIndexOf(" ") + 1, -1),
+        interpolationIndex: i,
+      });
+    }
+    // Handle interpolated attributes and inline event listeners
+    else if (
+      isOpeningTag &&
+      !isComponentTag &&
+      unparsedFragment.endsWith("=")
+    ) {
+      const phrases = templateStack.at(-1).parsedHtmlPhrases;
+      const tagStart = phrases.findLastIndex((phrase) => phrase.tagStart);
+
+      if (
+        !phrases[tagStart - 1] ||
+        phrases[tagStart - 1].type !== phraseTypes.IDENTIFIER
+      ) {
+        getIdentifiers().push({ suffix });
+        suffix++;
+
+        phrases.splice(tagStart, 0, {
+          type: phraseTypes.IDENTIFIER,
+          index: getIdentifiers().length - 1,
+        });
+      }
+
+      const attrStart = unparsedFragment.lastIndexOf(" ") + 1;
+      const attrName = unparsedFragment.slice(attrStart, -1);
+
+      pushPhrase({
+        type: phraseTypes.HTML,
+        value: unparsedFragment.slice(0, attrStart),
+      });
+
+      if (attrName.startsWith("on")) {
+        getIdentifiers().at(-1).hasEvent = true;
+
+        templateStack.at(-1).listeners.push({
+          interpolationIndex: i,
+          event: attrName.slice(2).toLowerCase(),
+          identifierIndex: getIdentifiers().length - 1,
+        });
+      } else {
+        templateStack.at(-1).attributes.push({
+          name: attrName,
+          interpolationIndex: i,
+          identifierIndex: getIdentifiers().length - 1,
+        });
+
+        pushPhrase({
+          type: phraseTypes.ATTRIBUTE,
+          index: templateStack.at(-1).attributes.length - 1,
+        });
+      }
+    }
+    // Handle slots
+    else if (
+      !isOpeningTag &&
+      !isClosingTag &&
+      i !== template.htmlStrings.length - 1
+    ) {
+      pushPhrase({ type: phraseTypes.HTML, value: unparsedFragment });
+
+      getIdentifiers().push({ suffix });
+      suffix++;
+
+      pushPhrase({
+        type: phraseTypes.IDENTIFIER,
+        index: getIdentifiers().length - 1,
+      });
+
+      templateStack.at(-1).slots.push({
+        interpolationIndex: i,
+        identifierIndex: getIdentifiers().length - 1,
+      });
+
+      pushPhrase({
+        type: phraseTypes.SLOT,
+        index: templateStack.at(-1).slots.length - 1,
+      });
+    } else {
+      pushPhrase({ type: phraseTypes.HTML, value: unparsedFragment });
     }
   });
 

@@ -1,7 +1,7 @@
 {
   "version": "0.0.0",
   "description": "",
-  "main": "src/trie.js",
+  "main": "src/aspen.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "concurrently \"livereload\" \"serve -p 3000\" \"sleep .5 && open http://localhost:3000\""

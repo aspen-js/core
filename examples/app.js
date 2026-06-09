@@ -1,4 +1,4 @@
-import { html, signal } from "trie";
+import { html, signal } from "aspen";
 
 export * from "./todo-list.js";
 

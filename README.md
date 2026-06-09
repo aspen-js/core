@@ -1,7 +1,7 @@
-# Trie
+# Aspen
 
-Trie is a lightweight JSX/React alternative that does not require a compiler,
-can run directly in the browser, and is intended to be used without a bundler.
+Aspen is a lightweight JSX/React alternative that is intended to be used
+without a bundler or compiler.
 
 > ⚠️ Warning
 >
@@ -13,7 +13,7 @@ can run directly in the browser, and is intended to be used without a bundler.
 Create a new directory and in `app.js` add:
 
 ```javascript
-import { html, signal } from "trie";
+import { html, signal } from "aspen";
 
 export function Counter() {
   const $count = signal(0);
@@ -35,12 +35,12 @@ In `index.html` add:
     <script type="importmap">
       {
         "imports": {
-          "trie": "https://cdn.jsdelivr.net/gh/triejs/core/src/trie.min.js"
+          "aspen": "https://cdn.jsdelivr.net/gh/aspen-js/core/src/aspen.min.js"
         }
       }
     </script>
     <script type="module">
-      import { createRoot, html } from "trie";
+      import { createRoot, html } from "aspen";
       import * as app from "./app.js";
 
       const root = createRoot(document.getElementById("root"), app);

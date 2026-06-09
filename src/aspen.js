@@ -505,14 +505,15 @@ const componentsByKey = {};
 let propsByKey = {};
 
 function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
-  keyStack.push(key);
-
   let template;
   if (isTemplate(node)) {
     template = node;
   } else {
     componentsByKey[key] = node;
+
+    keyStack.push(key);
     template = node(propsByKey[key] || {});
+    keyStack.pop();
   }
 
   if (isPrimitive(template)) {
@@ -520,7 +521,6 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
       result.html += escapeHtml(template);
     }
 
-    keyStack.pop();
     return result;
   }
 
@@ -550,9 +550,6 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
       case phraseTypes.HTML:
         result.html += phrase.value;
         break;
-      // TODO: Slicing large strings seems to take a long time
-      // - you should be able to work around this by making some adjustments to
-      //   the parsing logic
       case phraseTypes.ATTRIBUTE:
         {
           const attribute = template.attributes[phrase.index];
@@ -564,7 +561,7 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
             result.html += attribute.name;
           } else if (
             isHtmlTruthy(value) &&
-            // Don't include inline event values as those are attached with
+            // Don't include inline event listeners as those are attached with
             // addEventListener
             !attribute.name.startsWith("on")
           ) {
@@ -658,7 +655,6 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
     });
   });
 
-  keyStack.pop();
   return result;
 }
 
@@ -782,8 +778,6 @@ function clearTemplate(key, clearOwnComponent = false) {
 }
 
 function render(key, node, depth = 0, domMutations = []) {
-  keyStack.push(key);
-
   let template;
   if (isTemplate(node)) {
     template = node;
@@ -793,8 +787,12 @@ function render(key, node, depth = 0, domMutations = []) {
     delete accessByKey[key];
     delete enumeratedAccessByKey[key];
 
+    keyStack.push(key);
     signalComponentIndex = 0;
+
     template = node(propsByKey[key] || {});
+
+    keyStack.pop();
     signalComponentIndex = 0;
   }
 
@@ -810,7 +808,6 @@ function render(key, node, depth = 0, domMutations = []) {
       domMutations.forEach((mutation) => mutation());
     }
 
-    keyStack.pop();
     return;
   }
 
@@ -835,7 +832,6 @@ function render(key, node, depth = 0, domMutations = []) {
     }
 
     templatesByKey[key] = template;
-    keyStack.pop();
     return;
   }
 
@@ -1085,7 +1081,6 @@ function render(key, node, depth = 0, domMutations = []) {
   }
 
   templatesByKey[key] = template;
-  keyStack.pop();
 }
 
 const accessByKey = {};

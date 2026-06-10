@@ -730,8 +730,10 @@ function setHtml(key, html, mode = "set") {
   if (mode === "set" || mode === "text" || mode === "overwrite") {
     while (
       node.nextSibling &&
-      (node.nextSibling.nodeType !== Node.COMMENT_NODE ||
-        !node.nextSibling.nodeValue?.includes(` ${key} `))
+      !(
+        node.nextSibling.nodeType === Node.COMMENT_NODE &&
+        node.nextSibling.nodeValue?.includes(` ${key} `)
+      )
     ) {
       node.nextSibling.remove();
     }

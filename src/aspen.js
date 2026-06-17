@@ -142,6 +142,10 @@ export function createRoot(domNode, scope) {
       domNode.innerHTML = result.html;
 
       hydrate("root", result);
+
+      while (deferredTasks.length) {
+        deferredTasks.shift()();
+      }
     },
   };
 }
@@ -185,7 +189,9 @@ function getTemplateBuilder(key, defaultHtmlStrings, ...defaultInterpolations) {
 
     return {
       _isTemplateNode: true,
-      // Prefixed so that numeric keys can't cause identifier collisions
+      // TODO: you need to escape dots and hashes in keys
+      // - prefixing is not enough
+      // - might be best to avoid storing array keys in the dom at all
       assignedkey: isValidKey(key) ? "i_" + key : undefined,
       // NOTE: when determining dom changes, object equality can be used
       // instead of a hash for templates created when parsing component
@@ -503,10 +509,7 @@ function parseTemplateInPlace(template) {
   template.parsedHtmlPhrases = mergePhrases(template.parsedHtmlPhrases);
 }
 
-const keyStack = [];
-function getCurrentKey() {
-  return keyStack.at(-1);
-}
+const renderStack = [];
 
 const templatesByKey = {};
 const componentsByKey = {};
@@ -520,9 +523,14 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
   } else {
     componentsByKey[key] = node;
 
-    keyStack.push(key);
+    renderStack.push({
+      type: "component",
+      key,
+      onUpdate: () => render(key, node),
+    });
+
     template = node(propsByKey[key] || {});
-    keyStack.pop();
+    renderStack.pop();
   }
 
   if (isPrimitive(template)) {
@@ -687,9 +695,9 @@ function getElementByKey(key) {
 // TODO: Try event delegation
 // - might be more memory efficient since you wouldn't have so many listeners
 // - you wouldn't need document.evaluate at all
-function hydrate(key, { listenersByKey }) {
+function hydrate(rootKey, { listenersByKey }) {
   const nodeSet = document.evaluate(
-    `//comment()[contains(string(), " evt ${key}")]`,
+    `//comment()[contains(string(), " evt ${rootKey}")]`,
     document,
     null,
     XPathResult.UNORDERED_NODE_ITERATOR_TYPE,
@@ -766,26 +774,38 @@ function setHtml(key, html, mode = "set") {
   }
 }
 
-function clearChildKeys(key, obj, clearSelf = true) {
+function clearMatchingKeys(key, obj, clearSelf = true) {
   Object.keys(obj).forEach((objKey) => {
-    if (objKey.startsWith(key) && (clearSelf || objKey !== key)) {
+    if (typeof objKey === "symbol") {
+      return;
+    }
+
+    const cacheKey = objKey.split("#task")[0];
+
+    if (cacheKey.startsWith(key) && (clearSelf || cacheKey !== key)) {
       delete obj[objKey];
     }
   });
 }
 
-function clearAll(key) {
-  clearTemplate(key, true);
+function cleanup(key) {
+  clearMatchingKeys(key, elementsByKey);
+  clearMatchingKeys(key, templatesByKey);
+  clearMatchingKeys(key, propsByKey);
+  clearMatchingKeys(key, hookInitsByKey);
+  clearMatchingKeys(key, componentsByKey);
+  clearMatchingKeys(key, accessByKey);
+  clearMatchingKeys(key, enumeratedAccessByKey);
 }
 
-function clearTemplate(key, clearOwnComponent = false) {
-  clearChildKeys(key, elementsByKey);
-  clearChildKeys(key, templatesByKey);
-  clearChildKeys(key, propsByKey, clearOwnComponent);
-  clearChildKeys(key, signalInitsByKey, clearOwnComponent);
-  clearChildKeys(key, componentsByKey, clearOwnComponent);
-  clearChildKeys(key, accessByKey, clearOwnComponent);
-  clearChildKeys(key, enumeratedAccessByKey, clearOwnComponent);
+function cleanupChildren(key) {
+  clearMatchingKeys(key, elementsByKey);
+  clearMatchingKeys(key, templatesByKey);
+  clearMatchingKeys(key, propsByKey, false);
+  clearMatchingKeys(key, hookInitsByKey, false);
+  clearMatchingKeys(key, componentsByKey, false);
+  clearMatchingKeys(key, accessByKey, false);
+  clearMatchingKeys(key, enumeratedAccessByKey, false);
 }
 
 function render(key, node, depth = 0, domMutations = []) {
@@ -798,17 +818,21 @@ function render(key, node, depth = 0, domMutations = []) {
     delete accessByKey[key];
     delete enumeratedAccessByKey[key];
 
-    keyStack.push(key);
-    signalComponentIndex = 0;
+    renderStack.push({
+      type: "component",
+      key,
+      onUpdate: () => render(key, node),
+    });
 
+    componentHookIndex = 0;
     template = node(propsByKey[key] || {});
+    componentHookIndex = 0;
 
-    keyStack.pop();
-    signalComponentIndex = 0;
+    renderStack.pop();
   }
 
   if (isPrimitive(template)) {
-    clearTemplate(key);
+    cleanupChildren(key);
 
     domMutations.push(() =>
       // No need to escape since setHtml with mode "text" calls createTextNode
@@ -817,6 +841,10 @@ function render(key, node, depth = 0, domMutations = []) {
 
     if (depth === 0 && domMutations.length) {
       domMutations.forEach((mutation) => mutation());
+
+      while (deferredTasks.length) {
+        deferredTasks.shift()();
+      }
     }
 
     return;
@@ -829,7 +857,7 @@ function render(key, node, depth = 0, domMutations = []) {
   template.components ||= node.components;
 
   if (!templatesByKey[key] || !isTemplateMatch(templatesByKey[key], template)) {
-    clearTemplate(key);
+    cleanupChildren(key);
 
     const result = renderToString(key, template);
 
@@ -838,11 +866,16 @@ function render(key, node, depth = 0, domMutations = []) {
       hydrate(key, result);
     });
 
+    templatesByKey[key] = template;
+
     if (depth === 0 && domMutations.length) {
       domMutations.forEach((mutation) => mutation());
+
+      while (deferredTasks.length) {
+        deferredTasks.shift()();
+      }
     }
 
-    templatesByKey[key] = template;
     return;
   }
 
@@ -855,7 +888,7 @@ function render(key, node, depth = 0, domMutations = []) {
 
     if (isPrimitive(value)) {
       if (prevValue !== value) {
-        clearAll(slotKey);
+        cleanup(slotKey);
 
         domMutations.push(() =>
           // No need to escape since setHtml with mode "text" calls
@@ -870,7 +903,7 @@ function render(key, node, depth = 0, domMutations = []) {
         !isInterpolationsMatch(prevValue, value)
       ) {
         if (isTemplate(prevValue) && !isTemplateMatch(prevValue, value)) {
-          clearAll(slotKey);
+          cleanup(slotKey);
         }
 
         value.components ||= template.components;
@@ -879,7 +912,7 @@ function render(key, node, depth = 0, domMutations = []) {
       }
     } else if (Array.isArray(value)) {
       if (isTemplate(prevValue)) {
-        clearAll(slotKey);
+        cleanup(slotKey);
       }
 
       if (!value.every(isTemplate)) {
@@ -915,7 +948,7 @@ function render(key, node, depth = 0, domMutations = []) {
       }
 
       if (renderAll) {
-        clearAll(slotKey);
+        cleanup(slotKey);
 
         const result = value.reduce(
           (result, item) => {
@@ -944,7 +977,7 @@ function render(key, node, depth = 0, domMutations = []) {
             !value.some((item) => item.assignedkey === prevItem.assignedkey)
           ) {
             const itemKey = slotKey + "." + prevItem.assignedkey;
-            clearAll(itemKey);
+            cleanup(itemKey);
             domMutations.push(() => setHtml(itemKey, "", "overwrite"));
           }
         });
@@ -1087,11 +1120,15 @@ function render(key, node, depth = 0, domMutations = []) {
     render(key, componentsByKey[key], depth + 1, domMutations),
   );
 
+  templatesByKey[key] = template;
+
   if (depth === 0 && domMutations.length) {
     domMutations.forEach((mutation) => mutation());
-  }
 
-  templatesByKey[key] = template;
+    while (deferredTasks.length) {
+      deferredTasks.shift()();
+    }
+  }
 }
 
 const accessByKey = {};
@@ -1100,33 +1137,57 @@ const enumeratedAccessByKey = {};
 const pathPropertyName = Symbol();
 
 function subscribe(lookup, signalId, path) {
-  const currentKey = getCurrentKey();
+  const currentKey = renderStack.at(-1).key;
 
   if (currentKey) {
     const access = (lookup[currentKey] ||= {});
-    const paths = (access[signalId] ||= []);
+    const paths = (access[signalId] ||= {});
 
-    if (!paths.includes(path)) {
-      paths.push(path);
+    if (!paths[path]) {
+      paths[path] = renderStack.at(-1);
     }
   }
 }
 
-function renderSubs(lookup, signalId, path) {
-  Object.entries(lookup).forEach(([key, access]) => {
+function handleSubs(lookup, signalId, path) {
+  const plannedUpdates = [];
+
+  [
+    // Symbol keys are only used for tasks defined outside components
+    ...Object.getOwnPropertySymbols(lookup).map((symbol) => [
+      symbol,
+      lookup[symbol],
+    ]),
+    ...Object.entries(lookup).sort(([a], [b]) => {
+      const isATask = a.includes("#task");
+      const isBTask = b.includes("#task");
+
+      // Sort tasks first so that the deferredTasks array is taken care of when
+      // rendering completes
+      return isATask && !isBTask ? -1 : isBTask && !isATask ? 1 : 0;
+    }),
+  ].forEach(([key, access]) => {
     const paths = access[signalId];
 
     // TODO: To ensure that each component is rendered no more than once per
     // signal update you'll need to track mutations to the keyStack array
-    if (
-      paths?.includes(path) &&
-      // Check that the key is still present as rendering one key may clear
-      // others
-      lookup[key]
-    ) {
-      render(key, componentsByKey[key]);
+    if (paths?.[path]) {
+      const update = paths[path];
+      plannedUpdates.push((ctx) => {
+        // Check that the key is still present as rendering one key may clear
+        // others
+        if (lookup[key]) {
+          update.onUpdate(ctx);
+        }
+      });
     }
   });
+
+  const plannedRenders = plannedUpdates.filter(
+    (update) => update.type === "component",
+  ).length;
+
+  plannedUpdates.forEach((update) => update({ plannedRenders }));
 }
 
 class ProxyHandler {
@@ -1159,7 +1220,7 @@ class ProxyHandler {
       proxied = value;
     }
 
-    if (getCurrentKey()) {
+    if (renderStack.length) {
       if (
         Array.isArray(target) &&
         (typeof value === "function" || prop === "length")
@@ -1190,7 +1251,7 @@ class ProxyHandler {
         // subscribers know about them when the method is complete
         const result = target[prop](...args);
 
-        renderSubs(enumeratedAccessByKey, this.#signalId, this.path);
+        handleSubs(enumeratedAccessByKey, this.#signalId, this.path);
 
         return result;
       };
@@ -1220,10 +1281,10 @@ class ProxyHandler {
     Reflect.set(target, prop, value, receiver);
 
     if (Array.isArray(target) || isPlainObject(target)) {
-      renderSubs(enumeratedAccessByKey, this.#signalId, this.path);
+      handleSubs(enumeratedAccessByKey, this.#signalId, this.path);
     }
 
-    renderSubs(accessByKey, this.#signalId, this.path + "." + prop);
+    handleSubs(accessByKey, this.#signalId, this.path + "." + prop);
 
     return true;
   }
@@ -1231,25 +1292,85 @@ class ProxyHandler {
   deleteProperty(target, prop) {
     Reflect.deleteProperty(target, prop, receiver);
 
-    renderSubs(enumeratedAccessByKey, this.#signalId, this.path);
+    handleSubs(enumeratedAccessByKey, this.#signalId, this.path);
 
     return true;
   }
 }
 
-const signalInitsByKey = {};
+const hookInitsByKey = {};
 
-let signalComponentIndex = 0;
+let componentHookIndex = 0;
 
 export function signal(initialValue) {
-  if (getCurrentKey()) {
-    signalInitsByKey[getCurrentKey()] ||= {};
-    return (signalInitsByKey[getCurrentKey()][signalComponentIndex++] ||=
-      new Proxy({ val: initialValue }, new ProxyHandler(Symbol(), "[root]")));
+  const currentKey =
+    renderStack.at(-1)?.type === "component"
+      ? renderStack.at(-1).key
+      : undefined;
+
+  if (currentKey) {
+    hookInitsByKey[currentKey] ||= {};
+    return (hookInitsByKey[currentKey][componentHookIndex++] ||= new Proxy(
+      { val: initialValue },
+      new ProxyHandler(Symbol(), "[root]"),
+    ));
   } else {
     return new Proxy(
       { val: initialValue },
       new ProxyHandler(Symbol(), "[root]"),
     );
+  }
+}
+
+const deferredTasks = [];
+
+// TODO: Allow returning a cleanup function
+export function task(callback) {
+  const componentKey =
+    renderStack.at(-1)?.type === "component"
+      ? renderStack.at(-1).key
+      : undefined;
+
+  const isFirstRender = !hookInitsByKey[componentKey]?.[componentHookIndex];
+
+  if (componentKey) {
+    hookInitsByKey[componentKey] ||= {};
+    hookInitsByKey[componentKey][componentHookIndex] = true;
+  }
+
+  const taskKey = componentKey
+    ? `${componentKey}#task-${componentHookIndex++}`
+    : Symbol();
+
+  const doTask = () => {
+    renderStack.push({
+      type: "task",
+      key: taskKey,
+      onUpdate: ({ plannedRenders }) => {
+        if (renderStack.at(-1)?.key === taskKey) {
+          // Prevent infinite recursion by doing nothing if the update happened
+          // during the task itself
+          return;
+        }
+
+        if (plannedRenders > 0) {
+          // Wait to execute tasks until rendering is complete
+          deferredTasks.push(doTask);
+        } else {
+          doTask();
+        }
+      },
+    });
+
+    delete accessByKey[taskKey];
+    delete enumeratedAccessByKey[taskKey];
+
+    callback();
+
+    renderStack.pop();
+  };
+
+  if (!componentKey || isFirstRender) {
+    deferredTasks.push(doTask);
   }
 }

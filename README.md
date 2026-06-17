@@ -119,10 +119,10 @@ Html templates can be assigned to variables.
 ```javascript
 import { html } from "aspen";
 
-export function DivOrSpanContainer({ children }) {
-  const inner = html`<div class="inner-container">${children}</div>`;
+export function Card({ children }) {
+  const inner = html`<div class="inner-card-container">${children}</div>`;
 
-  return html`<div class="outer-container">${inner}</div>`;
+  return html`<div class="outer-card-container">${inner}</div>`;
 }
 ```
 
@@ -204,7 +204,7 @@ export const TodoList = () => {
     >
       Add todo
     </button>
-    ${$todos.val.map(($todo) => html($todo.id)`<Todo $todo=${$todo} />`)}
+    ${$todos.val.map((todo) => html(todo.id)`<Todo $todo=${todo} />`)}
   `;
 };
 ```

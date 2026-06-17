@@ -1253,3 +1253,22 @@ export function signal(initialValue) {
     );
   }
 }
+
+// DEV: rules for tasks
+// - tasks run whenever one of the signals they reference is updated (just like
+// components)
+
+const taskInitsByKey = {};
+const deferredTasks = [];
+
+let taskComponentIndex = 0;
+
+// DEV: plan
+// - update the key logic so that signals can tell whether they're being
+// referenced in a component body or a task callback
+// - task should push onto the key stack before calling callback and pop afterwords
+// - update the signal subscription logic so that it nows how to handle task vs component subscriptions
+// - you'll need to have a global stack just for tasks so that you can delay executing them until after all renders are complete
+//   - when a signal is updated, tasks that reference it are added to the task stack
+//   - hmm, that means tasks are going to be less synchronous than other hooks?
+export function task(callback) {}

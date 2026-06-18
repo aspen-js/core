@@ -47,3 +47,13 @@ export function App() {
     <WithChildren children=${wrapped} />
   `;
 }
+
+export function DivOrSpanContainer({ as, children }) {
+  const wrapped = html`<div class="inner-container">${children}</div>`;
+
+  return as === "span"
+    ? html`<span>${wrapped}</span>`
+    : as === "div"
+      ? html`<div>${wrapped}</div>`
+      : wrapped;
+}

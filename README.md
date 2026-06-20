@@ -204,7 +204,7 @@ export const TodoList = () => {
     >
       Add todo
     </button>
-    ${$todos.val.map(($todo) => html($todo.id)`<Todo $todo=${$todo} />`)}
+    ${$todos.val.map((todo) => html(todo.id)`<Todo $todo=${todo} />`)}
   `;
 };
 ```

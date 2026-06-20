@@ -2,7 +2,7 @@ import { signal, html } from "aspen";
 
 let todoCount = 0;
 function todoId() {
-  return ++todoCount;
+  return todoCount++;
 }
 
 const initialTodos = [...Array(3)].map(() => ({

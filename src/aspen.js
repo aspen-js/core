@@ -7,14 +7,21 @@ const phraseTypes = {
 };
 
 const INVALID_ARRAY_ITEM =
-  "[helix] Each element in an array must be wrapped in html(key)`...`";
+  "[helix] Each item in an array must be a template. Create one like this: html(key)`...`";
 const MISSING_ARRAY_ITEM_KEY =
-  "[helix] Each element in an array must have a key. Pass one like this: html(key)`...`";
+  "[helix] Each template in an array must have a key. Pass one like this: html(key)`...`";
 
 const DEBUG = true;
 
 function debug(...msg) {
   DEBUG && console.log(...msg);
+}
+
+function isValidKey(key) {
+  return (
+    (typeof key === "string" && key.trim()) ||
+    (typeof key === "number" && !isNaN(key))
+  );
 }
 
 function isTemplate(value) {
@@ -178,9 +185,11 @@ function getTemplateBuilder(key, defaultHtmlStrings, ...defaultInterpolations) {
 
     return {
       _isTemplateNode: true,
-      assignedkey: key ? "i_" + key : undefined,
-      // NOTE: when determining dom changes object equality can be used instead
-      // of a hash for templates created when parsing component children
+      // Prefixed so that numeric keys can't cause identifier collisions
+      assignedkey: isValidKey(key) ? "i_" + key : undefined,
+      // NOTE: when determining dom changes, object equality can be used
+      // instead of a hash for templates created when parsing component
+      // children
       hash: htmlStringsWithDefaults.join("_"),
       interpolations: interpolations.length
         ? interpolations
@@ -589,7 +598,7 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
               throw new Error(INVALID_ARRAY_ITEM);
             }
 
-            if (!value.every((item) => item.assignedkey)) {
+            if (!value.every((item) => isValidKey(item.assignedkey))) {
               throw new Error(MISSING_ARRAY_ITEM_KEY);
             }
 
@@ -877,7 +886,7 @@ function render(key, node, depth = 0, domMutations = []) {
         throw new Error(INVALID_ARRAY_ITEM);
       }
 
-      if (!value.every((item) => item.assignedkey)) {
+      if (!value.every((item) => isValidKey(item.assignedkey))) {
         throw new Error(MISSING_ARRAY_ITEM_KEY);
       }
 

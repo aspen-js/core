@@ -626,7 +626,7 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
                 ? [
                     [
                       prop.name,
-                      prop.name === "children"
+                      prop.name === "children" && isTemplate(prop.value)
                         ? {
                             ...prop.value,
                             components:

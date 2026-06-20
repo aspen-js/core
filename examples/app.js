@@ -30,3 +30,20 @@ export function CounterWithInput() {
     <input value=${$text.val} oninput=${(e) => ($text.val = e.target.value)} />
   `;
 }
+
+export function WithChildren(props) {
+  return html` <div>${props.children}</div> `;
+}
+
+export function App() {
+  const count = signal(0);
+  const wrapped =
+    count.val > 3
+      ? html`count is <b>over</b> three`
+      : html`<span style="color:green;">count is under three</span>`;
+
+  return html`
+    <button onClick=${() => count.val++}>count: ${count.val}</button>
+    <WithChildren children=${wrapped} />
+  `;
+}

@@ -503,6 +503,9 @@ function parseTemplateInPlace(template) {
   template.parsedHtmlPhrases = mergePhrases(template.parsedHtmlPhrases);
 }
 
+// DEV: you could make this a stack of objects, and each object could have an
+// action method that would tell the signal how to handle updates
+// - renderStack?
 const keyStack = [];
 function getCurrentKey() {
   return keyStack.at(-1);
@@ -1261,6 +1264,7 @@ export function signal(initialValue) {
 const taskInitsByKey = {};
 const deferredTasks = [];
 
+// DEV: you could have a single hookIndex variable
 let taskComponentIndex = 0;
 
 // DEV: plan

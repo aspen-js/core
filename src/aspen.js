@@ -799,7 +799,7 @@ function clearTemplate(key, clearOwnComponent = false) {
   clearChildKeys(key, elementsByKey);
   clearChildKeys(key, templatesByKey);
   clearChildKeys(key, propsByKey, clearOwnComponent);
-  clearChildKeys(key, signalInitsByKey, clearOwnComponent);
+  clearChildKeys(key, hookInitsByKey, clearOwnComponent);
   clearChildKeys(key, componentsByKey, clearOwnComponent);
 
   // DEV: maybe just prefix task keys with "task."
@@ -1273,15 +1273,17 @@ class ProxyHandler {
   }
 }
 
-const signalInitsByKey = {};
+const hookInitsByKey = {};
 
 let componentHookIndex = 0;
 
 export function signal(initialValue) {
   if (getCurrentKey()) {
-    signalInitsByKey[getCurrentKey()] ||= {};
-    return (signalInitsByKey[getCurrentKey()][componentHookIndex++] ||=
-      new Proxy({ val: initialValue }, new ProxyHandler(Symbol(), "[root]")));
+    hookInitsByKey[getCurrentKey()] ||= {};
+    return (hookInitsByKey[getCurrentKey()][componentHookIndex++] ||= new Proxy(
+      { val: initialValue },
+      new ProxyHandler(Symbol(), "[root]"),
+    ));
   } else {
     return new Proxy(
       { val: initialValue },
@@ -1294,7 +1296,6 @@ export function signal(initialValue) {
 // - tasks run whenever one of the signals they reference is updated (just like
 // components)
 
-const taskInitsByKey = {};
 const deferredTasks = [];
 
 // DEV: plan
@@ -1310,6 +1311,11 @@ export function task(callback) {
     renderStack.at(-1).type === "component"
       ? renderStack.at(-1).key
       : undefined;
+
+  // DEV: slightly confusing that this is a different key?
+  const isFirstRender = !hookInitsByKey[componentKey][componentHookIndex];
+  hookInitsByKey[componentKey][componentHookIndex] = true;
+
   const taskKey = componentKey
     ? `task-${componentHookIndex++}.${componentKey}`
     : Symbol();
@@ -1329,14 +1335,15 @@ export function task(callback) {
     renderStack.pop();
   };
 
-  // DEV: not quite right, you only want to run on mount and update, not on every render
-
   // DEV: error handling?
   // - case when task is called in an invalid context?
   // - explain?
-  if (componentKey) {
-    deferredTasks.push(doTask);
-  } else {
-    doTask();
+
+  if (isFirstRender) {
+    if (componentKey) {
+      deferredTasks.push(doTask);
+    } else {
+      doTask();
+    }
   }
 }

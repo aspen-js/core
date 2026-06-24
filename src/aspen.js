@@ -1163,20 +1163,26 @@ function subscribe(lookup, signalId, path) {
 
 // DEV: this needs a different name
 function renderSubs(lookup, signalId, path) {
-  Object.entries(lookup).forEach(([key, access]) => {
-    const paths = access[signalId];
+  Object.entries(lookup)
+    .sort(([a], [b]) =>
+      // DEV: is this performant?
+      // - is this the right place to handle tasks if nothing is going to render?
+      a.startsWith("task") ? -1 : b.startsWith("task") ? 1 : 0,
+    )
+    .forEach(([key, access]) => {
+      const paths = access[signalId];
 
-    // TODO: To ensure that each component is rendered no more than once per
-    // signal update you'll need to track mutations to the keyStack array
-    if (
-      paths[path] &&
-      // Check that the key is still present as rendering one key may clear
-      // others
-      lookup[key]
-    ) {
-      paths[path].onUpdate();
-    }
-  });
+      // TODO: To ensure that each component is rendered no more than once per
+      // signal update you'll need to track mutations to the keyStack array
+      if (
+        paths[path] &&
+        // Check that the key is still present as rendering one key may clear
+        // others
+        lookup[key]
+      ) {
+        paths[path].onUpdate();
+      }
+    });
 }
 
 class ProxyHandler {
@@ -1354,7 +1360,13 @@ export function task(callback) {
     renderStack.push({
       type: "task",
       key: taskKey,
-      onUpdate: componentKey ? () => deferredTasks.push(doTask) : doTask,
+      // DEV: issue is this needs to be scheduled before rendering is complete?
+      // - but what if no component is being rendered?
+      onUpdate: componentKey
+        ? () => {
+            deferredTasks.push(doTask);
+          }
+        : doTask,
     });
     callback();
     renderStack.pop();
@@ -1364,7 +1376,9 @@ export function task(callback) {
   // - case when task is called in an invalid context?
   // - explain?
 
+  // DEV: not quite right for tasks outside of components
   if (isFirstRender) {
+    console.log("scheduling task during first render");
     if (componentKey) {
       deferredTasks.push(doTask);
     } else {

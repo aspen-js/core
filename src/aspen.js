@@ -1136,7 +1136,7 @@ const enumeratedAccessByKey = {};
 const pathPropertyName = Symbol();
 
 function subscribe(lookup, signalId, path) {
-  const currentKey = getCurrentKey();
+  const currentKey = renderStack.at(-1).key;
 
   if (currentKey) {
     const access = (lookup[currentKey] ||= {});
@@ -1148,6 +1148,7 @@ function subscribe(lookup, signalId, path) {
   }
 }
 
+// DEV: this needs a different name
 function renderSubs(lookup, signalId, path) {
   Object.entries(lookup).forEach(([key, access]) => {
     const paths = access[signalId];
@@ -1195,7 +1196,7 @@ class ProxyHandler {
       proxied = value;
     }
 
-    if (getCurrentKey()) {
+    if (renderStack.length) {
       if (
         Array.isArray(target) &&
         (typeof value === "function" || prop === "length")
@@ -1278,9 +1279,15 @@ const hookInitsByKey = {};
 let componentHookIndex = 0;
 
 export function signal(initialValue) {
-  if (getCurrentKey()) {
-    hookInitsByKey[getCurrentKey()] ||= {};
-    return (hookInitsByKey[getCurrentKey()][componentHookIndex++] ||= new Proxy(
+  // DEV: error in wrong context?
+  const currentKey =
+    renderStack.at(-1).type === "component"
+      ? renderStack.at(-1).key
+      : undefined;
+
+  if (currentKey) {
+    hookInitsByKey[currentKey] ||= {};
+    return (hookInitsByKey[currentKey][componentHookIndex++] ||= new Proxy(
       { val: initialValue },
       new ProxyHandler(Symbol(), "[root]"),
     ));

@@ -144,6 +144,9 @@ export function createRoot(domNode, scope) {
       hydrate("root", result);
 
       // DEV: pretty sure you also need to handle tasks here
+      while (deferredTasks.length) {
+        deferredTasks.shift()();
+      }
     },
   };
 }
@@ -823,6 +826,7 @@ function render(key, node, depth = 0, domMutations = []) {
     // - can you just re-use the exact same system you used for components?
     delete accessByKey[key];
     delete enumeratedAccessByKey[key];
+
     renderStack.push({
       type: "component",
       key,
@@ -849,6 +853,9 @@ function render(key, node, depth = 0, domMutations = []) {
       domMutations.forEach((mutation) => mutation());
 
       // DEV: handle tasks here
+      while (deferredTasks.length) {
+        deferredTasks.shift()();
+      }
     }
 
     return;
@@ -874,6 +881,9 @@ function render(key, node, depth = 0, domMutations = []) {
       domMutations.forEach((mutation) => mutation());
 
       // DEV: also here
+      while (deferredTasks.length) {
+        deferredTasks.shift()();
+      }
     }
 
     templatesByKey[key] = template;
@@ -1125,6 +1135,9 @@ function render(key, node, depth = 0, domMutations = []) {
     domMutations.forEach((mutation) => mutation());
 
     // DEV: hmm, and here
+    while (deferredTasks.length) {
+      deferredTasks.shift()();
+    }
   }
 
   templatesByKey[key] = template;
@@ -1303,7 +1316,10 @@ export function signal(initialValue) {
 // - tasks run whenever one of the signals they reference is updated (just like
 // components)
 
+// DEV: are you dealing with this in all the right places?
 const deferredTasks = [];
+
+// DEV: don't forget cleanup logic
 
 // DEV: plan
 // - update the key logic so that signals can tell whether they're being
@@ -1333,10 +1349,12 @@ export function task(callback) {
     // DEV: use a symbol as a key if we're not inside a component?
     // - you'll need to update the caching logic to handle symbol keys?
 
+    // DEV: clear out access by key?
+
     renderStack.push({
       type: "task",
       key: taskKey,
-      onUpdate: componentKey ? deferredTasks.push(doTask) : doTask,
+      onUpdate: componentKey ? () => deferredTasks.push(doTask) : doTask,
     });
     callback();
     renderStack.pop();

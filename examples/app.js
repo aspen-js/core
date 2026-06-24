@@ -1,9 +1,13 @@
-import { html, signal } from "aspen";
+import { html, signal, task } from "aspen";
 
 export * from "./todo-list.js";
 
 export function Counter() {
   const $count = signal(0);
+
+  task(() => {
+    console.log("[task] count:", $count.val);
+  });
 
   return html`
     <div>${$count.val}</div>

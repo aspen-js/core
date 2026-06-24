@@ -142,6 +142,8 @@ export function createRoot(domNode, scope) {
       domNode.innerHTML = result.html;
 
       hydrate("root", result);
+
+      // DEV: pretty sure you also need to handle tasks here
     },
   };
 }
@@ -506,9 +508,13 @@ function parseTemplateInPlace(template) {
 // DEV: you could make this a stack of objects, and each object could have an
 // action method that would tell the signal how to handle updates
 // - renderStack?
-const keyStack = [];
+// - call it something else?
+const renderStack = [];
+
 function getCurrentKey() {
-  return keyStack.at(-1);
+  if (renderStack.at(-1).type === "component") {
+    return renderStack.at(-1).key;
+  }
 }
 
 const templatesByKey = {};
@@ -522,10 +528,14 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
     template = node;
   } else {
     componentsByKey[key] = node;
+    renderStack.push({
+      type: "component",
+      key,
+      onUpdate: () => render(key, node),
+    });
 
-    keyStack.push(key);
     template = node(propsByKey[key] || {});
-    keyStack.pop();
+    renderStack.pop();
   }
 
   if (isPrimitive(template)) {
@@ -771,6 +781,10 @@ function setHtml(key, html, mode = "set") {
 
 function clearChildKeys(key, obj, clearSelf = true) {
   Object.keys(obj).forEach((objKey) => {
+    // DEV: is this right?
+    // - to avoid accidental clearing in some cases, pretty sure you need
+    // to add a "." to the end of the key before passing it to startsWith
+    // DEV: you're going to need to make some changes here
     if (objKey.startsWith(key) && (clearSelf || objKey !== key)) {
       delete obj[objKey];
     }
@@ -787,9 +801,16 @@ function clearTemplate(key, clearOwnComponent = false) {
   clearChildKeys(key, propsByKey, clearOwnComponent);
   clearChildKeys(key, signalInitsByKey, clearOwnComponent);
   clearChildKeys(key, componentsByKey, clearOwnComponent);
+
+  // DEV: maybe just prefix task keys with "task."
+
   clearChildKeys(key, accessByKey, clearOwnComponent);
   clearChildKeys(key, enumeratedAccessByKey, clearOwnComponent);
 }
+
+// DEV: running a task can trigger more renders
+// - do you need to do any extra work to make sure that all the tasks get
+// handled?
 
 function render(key, node, depth = 0, domMutations = []) {
   let template;
@@ -798,16 +819,22 @@ function render(key, node, depth = 0, domMutations = []) {
   } else {
     componentsByKey[key] = node;
 
+    // DEV: hmm, seems like you'll need to do the same thing with tasks
+    // - can you just re-use the exact same system you used for components?
     delete accessByKey[key];
     delete enumeratedAccessByKey[key];
+    renderStack.push({
+      type: "component",
+      key,
+      onUpdate: () => render(key, node),
+    });
 
-    keyStack.push(key);
-    signalComponentIndex = 0;
+    componentHookIndex = 0;
 
     template = node(propsByKey[key] || {});
 
-    keyStack.pop();
-    signalComponentIndex = 0;
+    renderStack.pop();
+    componentHookIndex = 0;
   }
 
   if (isPrimitive(template)) {
@@ -820,6 +847,8 @@ function render(key, node, depth = 0, domMutations = []) {
 
     if (depth === 0 && domMutations.length) {
       domMutations.forEach((mutation) => mutation());
+
+      // DEV: handle tasks here
     }
 
     return;
@@ -843,6 +872,8 @@ function render(key, node, depth = 0, domMutations = []) {
 
     if (depth === 0 && domMutations.length) {
       domMutations.forEach((mutation) => mutation());
+
+      // DEV: also here
     }
 
     templatesByKey[key] = template;
@@ -1092,6 +1123,8 @@ function render(key, node, depth = 0, domMutations = []) {
 
   if (depth === 0 && domMutations.length) {
     domMutations.forEach((mutation) => mutation());
+
+    // DEV: hmm, and here
   }
 
   templatesByKey[key] = template;
@@ -1107,10 +1140,10 @@ function subscribe(lookup, signalId, path) {
 
   if (currentKey) {
     const access = (lookup[currentKey] ||= {});
-    const paths = (access[signalId] ||= []);
+    const paths = (access[signalId] ||= {});
 
-    if (!paths.includes(path)) {
-      paths.push(path);
+    if (!paths[path]) {
+      paths[path] = { onUpdate: renderStack.at(-1).onUpdate };
     }
   }
 }
@@ -1122,12 +1155,12 @@ function renderSubs(lookup, signalId, path) {
     // TODO: To ensure that each component is rendered no more than once per
     // signal update you'll need to track mutations to the keyStack array
     if (
-      paths?.includes(path) &&
+      paths[path] &&
       // Check that the key is still present as rendering one key may clear
       // others
       lookup[key]
     ) {
-      render(key, componentsByKey[key]);
+      paths[path].onUpdate();
     }
   });
 }
@@ -1242,12 +1275,12 @@ class ProxyHandler {
 
 const signalInitsByKey = {};
 
-let signalComponentIndex = 0;
+let componentHookIndex = 0;
 
 export function signal(initialValue) {
   if (getCurrentKey()) {
     signalInitsByKey[getCurrentKey()] ||= {};
-    return (signalInitsByKey[getCurrentKey()][signalComponentIndex++] ||=
+    return (signalInitsByKey[getCurrentKey()][componentHookIndex++] ||=
       new Proxy({ val: initialValue }, new ProxyHandler(Symbol(), "[root]")));
   } else {
     return new Proxy(
@@ -1264,9 +1297,6 @@ export function signal(initialValue) {
 const taskInitsByKey = {};
 const deferredTasks = [];
 
-// DEV: you could have a single hookIndex variable
-let taskComponentIndex = 0;
-
 // DEV: plan
 // - update the key logic so that signals can tell whether they're being
 // referenced in a component body or a task callback
@@ -1275,4 +1305,38 @@ let taskComponentIndex = 0;
 // - you'll need to have a global stack just for tasks so that you can delay executing them until after all renders are complete
 //   - when a signal is updated, tasks that reference it are added to the task stack
 //   - hmm, that means tasks are going to be less synchronous than other hooks?
-export function task(callback) {}
+export function task(callback) {
+  const componentKey =
+    renderStack.at(-1).type === "component"
+      ? renderStack.at(-1).key
+      : undefined;
+  const taskKey = componentKey
+    ? `task-${componentHookIndex++}.${componentKey}`
+    : Symbol();
+
+  // DEV: hmm, outside of components, tasks will execute immediately
+  // - eventually, you'll need an extra check to handle them on the server
+  const doTask = () => {
+    // DEV: use a symbol as a key if we're not inside a component?
+    // - you'll need to update the caching logic to handle symbol keys?
+
+    renderStack.push({
+      type: "task",
+      key: taskKey,
+      onUpdate: componentKey ? deferredTasks.push(doTask) : doTask,
+    });
+    callback();
+    renderStack.pop();
+  };
+
+  // DEV: not quite right, you only want to run on mount and update, not on every render
+
+  // DEV: error handling?
+  // - case when task is called in an invalid context?
+  // - explain?
+  if (componentKey) {
+    deferredTasks.push(doTask);
+  } else {
+    doTask();
+  }
+}

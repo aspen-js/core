@@ -1,13 +1,21 @@
 <!doctype html>
 <html>
   <head>
+    <!-- <script type="importmap"> -->
+    <!--   { -->
+    <!--     "imports": { -->
+    <!--       "aspen": "https://cdn.jsdelivr.net/gh/aspen-js/core/src/aspen.min.js" -->
+    <!--     } -->
+    <!--   } -->
+    <!-- </script> -->
     <script type="importmap">
       {
         "imports": {
-          "aspen": "https://cdn.jsdelivr.net/gh/aspen-js/core/src/aspen.min.js"
+          "aspen": "../src/aspen.js"
         }
       }
     </script>
+
     <script type="module">
       import { createRoot, html } from "aspen";
       import * as app from "./app.js";

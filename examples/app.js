@@ -29,9 +29,22 @@ export function CounterWithInput() {
   const $count = signal(0);
   const $text = signal("");
 
+  task(() => {
+    console.log("[task1]", $count.val);
+  });
+
+  task(() => {
+    console.log("[task2]", $text.val);
+  });
+
   return html`
     <button onclick=${() => $count.val++}>count: ${$count.val}</button>
-    <input value=${$text.val} oninput=${(e) => ($text.val = e.target.value)} />
+    <input
+      value=${$text.val}
+      oninput=${(e) => {
+        $text.val = e.target.value;
+      }}
+    />
   `;
 }
 

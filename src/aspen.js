@@ -508,11 +508,13 @@ function parseTemplateInPlace(template) {
   template.parsedHtmlPhrases = mergePhrases(template.parsedHtmlPhrases);
 }
 
+// DEV: don't export this
+
 // DEV: you could make this a stack of objects, and each object could have an
 // action method that would tell the signal how to handle updates
 // - renderStack?
 // - call it something else?
-const renderStack = [];
+export const renderStack = [];
 
 function getCurrentKey() {
   if (renderStack.at(-1).type === "component") {
@@ -531,6 +533,7 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
     template = node;
   } else {
     componentsByKey[key] = node;
+
     renderStack.push({
       type: "component",
       key,
@@ -798,6 +801,9 @@ function clearAll(key) {
   clearTemplate(key, true);
 }
 
+// DEV: naming
+// - is there a better abstraction?
+
 function clearTemplate(key, clearOwnComponent = false) {
   clearChildKeys(key, elementsByKey);
   clearChildKeys(key, templatesByKey);
@@ -806,6 +812,8 @@ function clearTemplate(key, clearOwnComponent = false) {
   clearChildKeys(key, componentsByKey, clearOwnComponent);
 
   // DEV: maybe just prefix task keys with "task."
+  // - harder to clear keys for tasks with the current setup
+  // - might help to prepend them?
 
   clearChildKeys(key, accessByKey, clearOwnComponent);
   clearChildKeys(key, enumeratedAccessByKey, clearOwnComponent);
@@ -1175,7 +1183,7 @@ function renderSubs(lookup, signalId, path) {
       // TODO: To ensure that each component is rendered no more than once per
       // signal update you'll need to track mutations to the keyStack array
       if (
-        paths[path] &&
+        paths?.[path] &&
         // Check that the key is still present as rendering one key may clear
         // others
         lookup[key]
@@ -1364,6 +1372,8 @@ export function task(callback) {
       // - but what if no component is being rendered?
       onUpdate: componentKey
         ? () => {
+            // DEV: should do nothing if the update is from inside the same task
+            // - maybe even blacklist that signal + path combo
             deferredTasks.push(doTask);
           }
         : doTask,

@@ -31,6 +31,11 @@ export function CounterWithInput() {
 
   task(() => {
     console.log("[task1]", $count.val);
+
+    if ($count.val > 3) {
+      console.log("resetting text");
+      $text.val = "";
+    }
   });
 
   task(() => {

@@ -143,7 +143,6 @@ export function createRoot(domNode, scope) {
 
       hydrate("root", result);
 
-      // DEV: pretty sure you also need to handle tasks here
       while (deferredTasks.length) {
         deferredTasks.shift()();
       }
@@ -508,19 +507,8 @@ function parseTemplateInPlace(template) {
   template.parsedHtmlPhrases = mergePhrases(template.parsedHtmlPhrases);
 }
 
-// DEV: don't export this
-
-// DEV: you could make this a stack of objects, and each object could have an
-// action method that would tell the signal how to handle updates
-// - renderStack?
-// - call it something else?
-export const renderStack = [];
-
-function getCurrentKey() {
-  if (renderStack.at(-1).type === "component") {
-    return renderStack.at(-1).key;
-  }
-}
+// DEV: call it something else?
+const renderStack = [];
 
 const templatesByKey = {};
 const componentsByKey = {};
@@ -1142,7 +1130,6 @@ function render(key, node, depth = 0, domMutations = []) {
   if (depth === 0 && domMutations.length) {
     domMutations.forEach((mutation) => mutation());
 
-    // DEV: hmm, and here
     while (deferredTasks.length) {
       deferredTasks.shift()();
     }
@@ -1306,7 +1293,6 @@ const hookInitsByKey = {};
 let componentHookIndex = 0;
 
 export function signal(initialValue) {
-  // DEV: error in wrong context?
   const currentKey =
     renderStack.at(-1).type === "component"
       ? renderStack.at(-1).key
@@ -1326,23 +1312,9 @@ export function signal(initialValue) {
   }
 }
 
-// DEV: rules for tasks
-// - tasks run whenever one of the signals they reference is updated (just like
-// components)
-
-// DEV: are you dealing with this in all the right places?
 const deferredTasks = [];
 
-// DEV: don't forget cleanup logic
-
-// DEV: plan
-// - update the key logic so that signals can tell whether they're being
-// referenced in a component body or a task callback
-// - task should push onto the key stack before calling callback and pop afterwords
-// - update the signal subscription logic so that it nows how to handle task vs component subscriptions
-// - you'll need to have a global stack just for tasks so that you can delay executing them until after all renders are complete
-//   - when a signal is updated, tasks that reference it are added to the task stack
-//   - hmm, that means tasks are going to be less synchronous than other hooks?
+// TODO: Allow returning a cleanup function
 export function task(callback) {
   const componentKey =
     renderStack.at(-1).type === "component"
@@ -1353,27 +1325,25 @@ export function task(callback) {
   const isFirstRender = !hookInitsByKey[componentKey][componentHookIndex];
   hookInitsByKey[componentKey][componentHookIndex] = true;
 
+  // DEV: you'll need to update the caching logic to handle symbol keys?
   const taskKey = componentKey
     ? `task-${componentHookIndex++}.${componentKey}`
     : Symbol();
 
-  // DEV: hmm, outside of components, tasks will execute immediately
-  // - eventually, you'll need an extra check to handle them on the server
   const doTask = () => {
-    // DEV: use a symbol as a key if we're not inside a component?
-    // - you'll need to update the caching logic to handle symbol keys?
-
-    // DEV: clear out access by key?
-
+    // DEV: clear out access by key
     renderStack.push({
       type: "task",
       key: taskKey,
-      // DEV: issue is this needs to be scheduled before rendering is complete?
-      // - but what if no component is being rendered?
+      // DEV: should do nothing if the update is from inside the same task
+      // - maybe even blacklist that signal + path combo
+      //
+      // DEV: this should take the number subscribers to the signal + path combo as arg?
+      // - if that is 1 and there's nothing else on the render stack then it
+      // can execute immediately instead of secheduling
+      // - you should add some tests
       onUpdate: componentKey
         ? () => {
-            // DEV: should do nothing if the update is from inside the same task
-            // - maybe even blacklist that signal + path combo
             deferredTasks.push(doTask);
           }
         : doTask,
@@ -1382,17 +1352,10 @@ export function task(callback) {
     renderStack.pop();
   };
 
-  // DEV: error handling?
-  // - case when task is called in an invalid context?
-  // - explain?
-
-  // DEV: not quite right for tasks outside of components
-  if (isFirstRender) {
+  if (componentKey && isFirstRender) {
     console.log("scheduling task during first render");
-    if (componentKey) {
-      deferredTasks.push(doTask);
-    } else {
-      doTask();
-    }
+    deferredTasks.push(doTask);
+  } else if (!renderStack.length) {
+    doTask();
   }
 }

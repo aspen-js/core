@@ -18,8 +18,12 @@ export async function mountFrom(filename, page, component) {
           import { createRoot, html } from "#aspen";
           import * as app from "http://localhost:3002/tests/${filename}";
 
-          const root = createRoot(document.getElementById("root"), app);
-          root.render(html\`<${component.name} />\`);
+          try {
+            const root = createRoot(document.getElementById("root"), app);
+            root.render(html\`<${component.name} />\`);
+          } catch(e) {
+            console.log("Error:", e);
+          }
         </script>
       </head>
       <body>

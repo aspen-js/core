@@ -62,3 +62,42 @@ test("UPDATING A SIGNAL FROM A TASK DOESN'T CAUSE EXTRA LISTENERS TO BE ATTACHED
 
   expect(logs.filter((message) => message === "resetting text").length).toBe(3);
 });
+
+export function DoubleCounter() {
+  const $count = signal(0);
+
+  task(() => {
+    $count.val++;
+  });
+
+  return html`
+    <div>count: ${$count.val}</div>
+    <button onclick=${() => $count.val++}>↑</button>
+    <button onclick=${() => $count.val--}>↓</button>
+  `;
+}
+
+test("CANNOT DECREMENT COUNTER WITH A TASK THAT INCREMENTS THE COUNT", async ({
+  page,
+}) => {
+  await mount(page, DoubleCounter);
+
+  const count = page.getByText("count:");
+
+  const increment = page.getByText("↑");
+  const decrement = page.getByText("↓");
+
+  await increment.click();
+  await increment.click();
+
+  await expect(count).toContainText("count: 5");
+
+  await decrement.click();
+  await expect(count).toContainText("count: 5");
+
+  await decrement.click();
+  await expect(count).toContainText("count: 5");
+
+  await decrement.click();
+  await expect(count).toContainText("count: 5");
+});

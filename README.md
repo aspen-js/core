@@ -130,25 +130,38 @@ A component may return multiple elements in a single template without wrapping
 them in another element.
 
 ```javascript
-const TitledSection = ({ title, body }) => html`
+export const TitledSection = ({ title, body }) => html`
   <h2>${title}</h2>
   <p>${body}</p>
 `;
 ```
 
-If you create an array of html templates, you must pass a unique key to each
-one with the `key` arg: ``html(key)`...` ``.
+You can nest an array of html templates inside another template, but you must
+pass a unique key to each template in the array with the `key` arg:
+``html(key)`...` ``.
 
 ```javascript
 const flavors = ["mint", "vanilla", "chocolate"];
 
-function Flavors() {
+export function Flavors() {
   return html`
     <ul>
       ${flavors.map((flavor) => html(flavor)`<li>${flavor}</li>`)}
     </ul>
   `;
 }
+
+export const Digits = () => {
+  const digits = [...Array(10)].map((_, digit) => digit);
+
+  return html`
+    ${digits.map(
+      (digit) => html(digit)`
+        <div>${digit}</div>
+      `,
+    )}
+  `;
+};
 ```
 
 #### Using components

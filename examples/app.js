@@ -1,14 +1,48 @@
-import { html, signal } from "aspen";
+import { html, signal, task } from "aspen";
 
 export * from "./todo-list.js";
 
 export function Counter() {
   const $count = signal(0);
 
+  task(() => {
+    console.log("the count is", $count.val);
+  });
+
   return html`
     <div>${$count.val}</div>
     <button onclick=${() => $count.val++}>↑</button>
     <button onclick=${() => $count.val--}>↓</button>
+  `;
+}
+
+export function Profile({ user }) {
+  console.log("[Profile] rendering...");
+
+  return html`
+    <div
+      style="
+         height: 48px;
+         width: 48px; 
+         border-radius: 24px; 
+         background-position: center;
+         background-image: url('https://fastly.picsum.photos/id/15/200/300.jpg?hmac=lozQletmrLG9PGBV1hTM1PnmvHxKEU0lAZWu8F2oL30')
+      "
+    ></div>
+    <div>${user.name}</div>
+  `;
+}
+
+export function ProfileCard() {
+  console.log("[ProfileCard] rendering...");
+
+  const $user = signal({ name: "John Doe" });
+  const $name = signal("John Doe");
+
+  return html`
+    <Profile user=${$user.val} />
+    <input value=${$name.val} oninput=${(e) => ($name.val = e.target.value)} />
+    <button onclick=${() => ($user.val = { name: $name.val })}>Save</button>
   `;
 }
 

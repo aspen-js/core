@@ -7,9 +7,9 @@ const phraseTypes = {
 };
 
 const INVALID_ARRAY_ITEM =
-  "[helix] Each item in an array must be a template. Create one like this: html(key)`...`";
+  "[Aspen] Each item in an array must be a template. Create one like this: html(key)`...`";
 const MISSING_ARRAY_ITEM_KEY =
-  "[helix] Each template in an array must have a key. Pass one like this: html(key)`...`";
+  "[Aspen] Each template in an array must have a key. Pass one like this: html(key)`...`";
 
 const DEBUG = true;
 
@@ -189,6 +189,8 @@ function getTemplateBuilder(key, defaultHtmlStrings, ...defaultInterpolations) {
 
     return {
       _isTemplateNode: true,
+      // TODO: Use a lookup for assigned keys so that they don't have to go in
+      // the dom directly and symbols can be allowed
       assignedkey: isValidKey(key)
         ? // Base64 encode keys to prevent injection since these end up in the
           // dom (this also prevents collision with automatically created keys)
@@ -655,7 +657,7 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
             result,
           );
         } else {
-          throw new Error(`[helix] Component "${phrase.tagName}" not found`);
+          throw new Error(`[Aspen] Component "${phrase.tagName}" not found`);
         }
         break;
     }
@@ -687,7 +689,7 @@ function getElementByKey(key) {
   ).singleNodeValue?.nextSibling);
 
   if (!el.isConnected) {
-    throw new Error("[helix] Encountered disconnected element");
+    throw new Error("[Aspen] Encountered disconnected element");
   }
 
   return el;
@@ -695,7 +697,8 @@ function getElementByKey(key) {
 
 // TODO: Try event delegation
 // - might be more memory efficient since you wouldn't have so many listeners
-// - you wouldn't need document.evaluate at all
+// - you wouldn't need document.evaluate at all (for attaching events)
+//   - that would actually be a big perf win in some scenarios
 function hydrate(rootKey, { listenersByKey }) {
   const nodeSet = document.evaluate(
     `//comment()[contains(string(), " evt ${rootKey}")]`,
@@ -775,7 +778,7 @@ function setHtml(key, html, mode = "set") {
   }
 }
 
-function clearMatchingKeys(key, obj, clearSelf = true) {
+function clearNested(key, obj, clearSelf = true) {
   Object.keys(obj).forEach((objKey) => {
     if (typeof objKey === "symbol") {
       return;
@@ -790,23 +793,38 @@ function clearMatchingKeys(key, obj, clearSelf = true) {
 }
 
 function cleanup(key) {
-  clearMatchingKeys(key, elementsByKey);
-  clearMatchingKeys(key, templatesByKey);
-  clearMatchingKeys(key, propsByKey);
-  clearMatchingKeys(key, hookInitsByKey);
-  clearMatchingKeys(key, componentsByKey);
-  clearMatchingKeys(key, accessByKey);
-  clearMatchingKeys(key, enumeratedAccessByKey);
+  clearNested(key, elementsByKey);
+  clearNested(key, templatesByKey);
+  clearNested(key, propsByKey);
+  clearNested(key, hookInitsByKey);
+  clearNested(key, componentsByKey);
+  clearNested(key, accessByKey);
+  clearNested(key, enumeratedAccessByKey);
+  clearNested(key, taskCallbacksByKey);
 }
 
 function cleanupChildren(key) {
-  clearMatchingKeys(key, elementsByKey);
-  clearMatchingKeys(key, templatesByKey);
-  clearMatchingKeys(key, propsByKey, false);
-  clearMatchingKeys(key, hookInitsByKey, false);
-  clearMatchingKeys(key, componentsByKey, false);
-  clearMatchingKeys(key, accessByKey, false);
-  clearMatchingKeys(key, enumeratedAccessByKey, false);
+  clearNested(key, elementsByKey);
+  clearNested(key, templatesByKey);
+  clearNested(key, propsByKey, false);
+  clearNested(key, hookInitsByKey, false);
+  clearNested(key, componentsByKey, false);
+  clearNested(key, accessByKey, false);
+  clearNested(key, enumeratedAccessByKey, false);
+  clearNested(key, taskCallbacksByKey, false);
+}
+
+function resolveSignalProps(props) {
+  return Object.fromEntries(
+    Object.entries(props).map(([key, value]) => {
+      const path = value[PathProperty];
+      if (typeof path === "string") {
+        return [key, peek(signals.get(value[SignalIdProperty]).signal, path)];
+      }
+
+      return [key, value];
+    }),
+  );
 }
 
 function render(key, node, depth = 0, domMutations = []) {
@@ -825,8 +843,10 @@ function render(key, node, depth = 0, domMutations = []) {
       onUpdate: () => render(key, node),
     });
 
+    const props = resolveSignalProps(propsByKey[key] || {});
+
     componentHookIndex = 0;
-    template = node(propsByKey[key] || {});
+    template = node(props);
     componentHookIndex = 0;
 
     renderStack.pop();
@@ -1087,12 +1107,22 @@ function render(key, node, depth = 0, domMutations = []) {
   template.props.forEach((prop, i) => {
     const propKey =
       key + "." + template.identifiers[prop.identifierIndex].suffix;
+    const prevInterp =
+      templatesByKey[key].interpolations[prop.interpolationIndex];
+    const currentInterp = template.interpolations[prop.interpolationIndex];
 
     // Check prop equality across renders
     if (
       templatesByKey[key].props[i].value !== prop.value ||
-      templatesByKey[key].interpolations[prop.interpolationIndex] !==
-        template.interpolations[prop.interpolationIndex]
+      (prevInterp !== currentInterp &&
+        // Signals with the same id and path are considered equal here since
+        // the component will re-render whenever the signal is updated
+        !(
+          (typeof prevInterp[SignalIdProperty] === "symbol" ||
+            typeof currentInterp[SignalIdProperty] === "symbol") &&
+          prevInterp[SignalIdProperty] === currentInterp[SignalIdProperty] &&
+          prevInterp[PathProperty] === currentInterp[PathProperty]
+        ))
     ) {
       keysToRerender.push(propKey);
     }
@@ -1132,16 +1162,21 @@ function render(key, node, depth = 0, domMutations = []) {
   }
 }
 
+// TODO: probably wouldn't be too hard to combine these
 const accessByKey = {};
 const enumeratedAccessByKey = {};
 
-const pathPropertyName = Symbol();
+// A weak map removes the need to manually cleanup signal metadata for
+// unmounted signals. The cleanup and cleanupChildren functions remove
+// references to unmounted signals from the lookup objects, and since those are
+// the only way to access the #signalId symbols, which are used as used as
+// keys here, entries for unmounted signals become eligible for garbage
+// collection
+const signals = new WeakMap();
 
 function subscribe(lookup, signalId, path) {
-  const currentKey = renderStack.at(-1).key;
-
-  if (currentKey) {
-    const access = (lookup[currentKey] ||= {});
+  if (renderStack.at(-1) && renderStack.at(-1).type !== "peek") {
+    const access = (lookup[renderStack.at(-1).key] ||= {});
     const paths = (access[signalId] ||= {});
 
     if (!paths[path]) {
@@ -1150,71 +1185,163 @@ function subscribe(lookup, signalId, path) {
   }
 }
 
-function handleSubs(lookup, signalId, path) {
-  const plannedUpdates = [];
+const PathUnreachable = Symbol();
 
-  [
-    // Symbol keys are only used for tasks defined outside components
-    ...Object.getOwnPropertySymbols(lookup).map((symbol) => [
-      symbol,
-      lookup[symbol],
-    ]),
-    ...Object.entries(lookup).sort(([a], [b]) => {
+// TODO: escape periods in property names
+
+// Resolve a path within a signal object without subscribing to updates
+function peek(obj, path) {
+  renderStack.push({ type: "peek" });
+
+  const parts = path.split(".").filter(Boolean);
+  if (parts[0] === "[root]") {
+    parts.shift();
+  }
+
+  let value = obj;
+  parts.forEach((part) => {
+    if (isPlainObject(value)) {
+      value = value[part];
+    } else {
+      value = PathUnreachable;
+    }
+  });
+
+  renderStack.pop();
+
+  return value;
+}
+
+function shouldDoDeepUpdate(prevValue, currentValue) {
+  if (isPlainObject(prevValue) && isPlainObject(currentValue)) {
+    return false;
+  } else {
+    return prevValue !== currentValue;
+  }
+}
+
+function notifySubscribers(lookup, signalId, path, currentVal, deep) {
+  const { prevValues } = signals.get(signalId);
+
+  const plannedUpdatesByKey = {};
+  const keys = [
+    // Symbol keys are used for tasks defined outside components
+    ...Object.getOwnPropertySymbols(lookup),
+    ...Object.keys(lookup),
+  ];
+
+  if (!deep) {
+    // Notify subscribers even if prev and current values are equal according
+    // to ===. For subscribers that enumerate object properties or array items,
+    // a value may have changed in a meaningful way, even if it has the same
+    // reference, e.g. because of a call to .push on an array or the setting of
+    // an object property
+
+    keys.forEach((key) => {
+      const update = lookup[key]?.[signalId]?.[path];
+      if (update) {
+        plannedUpdatesByKey[key] = update;
+      }
+    });
+  } else {
+    // Notify subscribers only about meaninful changes to leaf nodes. A change
+    // is meaningful if:
+    // - prev and current primitive values are no longer equal
+    // - a value is changing from a primitive to a non-primitive value or vice
+    //   versa (changing from branch to leaf or leaf to branch)
+    // - a path has become unreachable
+
+    for (const key of keys) {
+      if (key in plannedUpdatesByKey) continue;
+
+      Object.entries(lookup[key]?.[signalId] || {}).forEach(
+        ([deepPath, update]) => {
+          if (deepPath === path) {
+            if (shouldDoDeepUpdate(prevValues[path], currentVal)) {
+              plannedUpdatesByKey[key] = update;
+            }
+          } else if (deepPath.startsWith(path + ".")) {
+            const pathToCheck = deepPath.slice(path.length + 1);
+
+            if (
+              shouldDoDeepUpdate(
+                peek(prevValues[path], pathToCheck),
+                peek(currentVal, pathToCheck),
+              )
+            ) {
+              plannedUpdatesByKey[key] = update;
+            }
+          }
+        },
+      );
+    }
+  }
+
+  const plannedRenders = Object.values(plannedUpdatesByKey).filter(
+    (update) => update.type === "component",
+  ).length;
+
+  // Schedule tasks defined outside of components. See comment below for why
+  // tasks must be scheduled before components render
+  Object.getOwnPropertySymbols(plannedUpdatesByKey).forEach((key) =>
+    plannedUpdatesByKey[key].onUpdate({ plannedRenders }),
+  );
+
+  Object.entries(plannedUpdatesByKey)
+    .sort(([a], [b]) => {
       const isATask = a.includes("#task");
       const isBTask = b.includes("#task");
 
       // Sort tasks first so that the deferredTasks array is taken care of when
       // rendering completes
-      return isATask && !isBTask ? -1 : isBTask && !isATask ? 1 : 0;
-    }),
-  ].forEach(([key, access]) => {
-    const paths = access[signalId];
-
-    // TODO: To ensure that each component is rendered no more than once per
-    // signal update you'll need to track mutations to the keyStack array
-    if (paths?.[path]) {
-      const update = paths[path];
-      plannedUpdates.push((ctx) => {
-        // Check that the key is still present as rendering one key may clear
-        // others
-        if (lookup[key]) {
-          update.onUpdate(ctx);
-        }
-      });
-    }
-  });
-
-  const plannedRenders = plannedUpdates.filter(
-    (update) => update.type === "component",
-  ).length;
-
-  plannedUpdates.forEach((update) => update({ plannedRenders }));
+      return isATask && !isBTask
+        ? -1
+        : !isATask && isBTask
+          ? 1
+          : // After tasks, sort shorter keys first so that parent components
+            // render before their children
+            a.length - b.length;
+    })
+    .forEach(([key, update]) => {
+      // One last check to make sure the key hasn't been cleaned up
+      if (lookup[key]) {
+        update.onUpdate({ plannedRenders });
+      }
+    });
 }
+
+const PathProperty = Symbol();
+const SignalIdProperty = Symbol();
 
 class ProxyHandler {
   #signalId;
+  #path;
 
   constructor(signalId, path) {
     this.#signalId = signalId;
-    this.path = path;
+    this.#path = path;
   }
 
   get(target, prop, receiver) {
-    if (prop === pathPropertyName) {
-      return this.path;
+    if (prop === SignalIdProperty) {
+      return this.#signalId;
     }
 
-    const value = Reflect.get(target, prop, receiver);
+    if (prop === PathProperty) {
+      return this.#path;
+    }
+
     let proxied;
+    const value = Reflect.get(target, prop, receiver);
 
     if (Array.isArray(value) || isPlainObject(value)) {
-      if (typeof value[pathPropertyName] === "string") {
+      if (typeof value[PathProperty] === "string") {
         proxied = value;
-        proxied[pathPropertyName] = this.path + "." + prop;
+        proxied[PathProperty] = this.#path + "." + prop;
       } else {
         proxied = new Proxy(
           value,
-          new ProxyHandler(this.#signalId, this.path + "." + prop),
+          new ProxyHandler(this.#signalId, this.#path + "." + prop),
         );
       }
     } else {
@@ -1226,9 +1353,9 @@ class ProxyHandler {
         Array.isArray(target) &&
         (typeof value === "function" || prop === "length")
       ) {
-        subscribe(enumeratedAccessByKey, this.#signalId, this.path);
+        subscribe(enumeratedAccessByKey, this.#signalId, this.#path);
       } else {
-        subscribe(accessByKey, this.#signalId, this.path + "." + prop);
+        subscribe(accessByKey, this.#signalId, this.#path + "." + prop);
       }
     }
 
@@ -1246,13 +1373,18 @@ class ProxyHandler {
       return (...args) => {
         debug("calling proxied", prop);
 
-        // TODO: In order to handle the edge case where an array is mutated via
+        // TODO: In order to handle the case where an array is mutated via
         // method but accessed elsewhere via arr[n], you'll need to track the
         // mutations that occur during method execution, and then let
         // subscribers know about them when the method is complete
         const result = target[prop](...args);
 
-        handleSubs(enumeratedAccessByKey, this.#signalId, this.path);
+        notifySubscribers(
+          enumeratedAccessByKey,
+          this.#signalId,
+          this.#path,
+          target,
+        );
 
         return result;
       };
@@ -1262,38 +1394,58 @@ class ProxyHandler {
   }
 
   has(target, prop, receiver) {
-    subscribe(enumeratedAccessByKey, this.#signalId, this.path);
+    subscribe(enumeratedAccessByKey, this.#signalId, this.#path);
 
     return Reflect.has(target, prop, receiver);
   }
 
   ownKeys(target) {
-    subscribe(enumeratedAccessByKey, this.#signalId, this.path);
+    subscribe(enumeratedAccessByKey, this.#signalId, this.#path);
 
-    return Reflect.has(target, prop, receiver);
+    return Reflect.ownKeys(target);
   }
 
   set(target, prop, value, receiver) {
-    if (prop === pathPropertyName) {
-      this.path = value;
+    if (prop === PathProperty) {
+      this.#path = value;
       return true;
     }
+
+    const { prevValues } = signals.get(this.#signalId);
+    prevValues[this.#path + "." + prop] = peek(target, prop);
 
     Reflect.set(target, prop, value, receiver);
 
     if (Array.isArray(target) || isPlainObject(target)) {
-      handleSubs(enumeratedAccessByKey, this.#signalId, this.path);
+      notifySubscribers(
+        enumeratedAccessByKey,
+        this.#signalId,
+        this.#path,
+        target,
+      );
     }
 
-    handleSubs(accessByKey, this.#signalId, this.path + "." + prop);
+    notifySubscribers(
+      accessByKey,
+      this.#signalId,
+      this.#path + "." + prop,
+      value,
+      true,
+    );
 
     return true;
   }
 
+  // TODO: Notify non-enumerated subs
   deleteProperty(target, prop) {
     Reflect.deleteProperty(target, prop, receiver);
 
-    handleSubs(enumeratedAccessByKey, this.#signalId, this.path);
+    notifySubscribers(
+      enumeratedAccessByKey,
+      this.#signalId,
+      this.#path,
+      target,
+    );
 
     return true;
   }
@@ -1309,21 +1461,47 @@ export function signal(initialValue) {
       ? renderStack.at(-1).key
       : undefined;
 
+  let result;
   if (currentKey) {
-    hookInitsByKey[currentKey] ||= {};
-    return (hookInitsByKey[currentKey][componentHookIndex++] ||= new Proxy(
-      { val: initialValue },
-      new ProxyHandler(Symbol(), "[root]"),
-    ));
+    const existing = hookInitsByKey[currentKey]?.[componentHookIndex];
+
+    if (existing) {
+      result = existing;
+    } else {
+      const symbol = Symbol();
+      const root = { val: initialValue };
+
+      hookInitsByKey[currentKey] ||= {};
+      result = hookInitsByKey[currentKey][componentHookIndex] = new Proxy(
+        root,
+        new ProxyHandler(symbol, "[root]"),
+      );
+
+      signals.set(symbol, {
+        prevValues: {},
+        rawValue: root,
+        signal: result,
+      });
+    }
+
+    ++componentHookIndex;
   } else {
-    return new Proxy(
-      { val: initialValue },
-      new ProxyHandler(Symbol(), "[root]"),
-    );
+    const symbol = Symbol();
+    const root = { val: initialValue };
+    result = new Proxy(root, new ProxyHandler(symbol, "[root]"));
+
+    signals.set(symbol, {
+      prevValues: {},
+      rawValue: root,
+      signal: result,
+    });
   }
+
+  return result;
 }
 
 const deferredTasks = [];
+const taskCallbacksByKey = {};
 
 // TODO: Allow returning a cleanup function
 export function task(callback) {
@@ -1333,15 +1511,17 @@ export function task(callback) {
       : undefined;
 
   const isFirstRender = !hookInitsByKey[componentKey]?.[componentHookIndex];
+  const taskKey = componentKey
+    ? `${componentKey}#task-${componentHookIndex}`
+    : Symbol();
 
   if (componentKey) {
     hookInitsByKey[componentKey] ||= {};
     hookInitsByKey[componentKey][componentHookIndex] = true;
+    ++componentHookIndex;
   }
 
-  const taskKey = componentKey
-    ? `${componentKey}#task-${componentHookIndex++}`
-    : Symbol();
+  taskCallbacksByKey[taskKey] = callback;
 
   const doTask = () => {
     renderStack.push({
@@ -1366,7 +1546,7 @@ export function task(callback) {
     delete accessByKey[taskKey];
     delete enumeratedAccessByKey[taskKey];
 
-    callback();
+    taskCallbacksByKey[taskKey]();
 
     renderStack.pop();
   };

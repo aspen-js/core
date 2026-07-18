@@ -64,8 +64,7 @@ export function Accordion({ sections }) {
 
   return html`
     ${sections.map(
-      // TODO: Keys should be able to contain spaces
-      (section, i) => html(section.title.replaceAll(" ", "-"))`
+      (section, i) => html(section.title)`
         <h2
           style="cursor: pointer;"
           onclick=${() => {

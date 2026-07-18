@@ -189,10 +189,11 @@ function getTemplateBuilder(key, defaultHtmlStrings, ...defaultInterpolations) {
 
     return {
       _isTemplateNode: true,
-      // TODO: you need to escape dots and hashes in keys
-      // - prefixing is not enough
-      // - might be best to avoid storing array keys in the dom at all
-      assignedkey: isValidKey(key) ? "i_" + key : undefined,
+      assignedkey: isValidKey(key)
+        ? // Base64 encode keys to prevent injection since these end up in the
+          // dom (this also prevents collision with automatically created keys)
+          btoa(key)
+        : undefined,
       // NOTE: when determining dom changes, object equality can be used
       // instead of a hash for templates created when parsing component
       // children

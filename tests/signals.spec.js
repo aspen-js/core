@@ -1,7 +1,5 @@
-import { test, expect } from "@playwright/test";
-
+import { test as __TEST__, expect } from "@playwright/test";
 import { html, signal } from "#aspen";
-
 import { mountFrom } from "./utils.js";
 
 const mount = (page, component) =>
@@ -17,7 +15,7 @@ export function Counter() {
   `;
 }
 
-test("CAN INCREMENT AND DECREMENT A COUNTER", async ({ page }) => {
+__TEST__("Can increment and decrement a counter", async ({ page }) => {
   await mount(page, Counter);
 
   const increment = page.getByText("↑");
@@ -83,7 +81,7 @@ export function Accordion({ sections }) {
   `;
 }
 
-test("CAN TOGGLE ACCORDION ITEMS", async ({ page }) => {
+__TEST__("Can toggle accordion items", async ({ page }) => {
   await mount(page, ThreeLaws);
 
   const heading1 = page.getByText(threeLaws[0].title);

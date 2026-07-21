@@ -1,7 +1,5 @@
-import { test, expect } from "@playwright/test";
-
+import { test as __TEST__, expect } from "@playwright/test";
 import { html, signal, task } from "#aspen";
-
 import { mountFrom } from "./utils.js";
 
 const mount = (page, component) => mountFrom("tasks.spec.js", page, component);
@@ -18,17 +16,18 @@ export function DoubleCounter() {
   `;
 }
 
-test("ACCESSING AND UPDATING A SIGNAL VALUE FROM INSIDE A TASK DOESN'T CAUSE INFINITE RECURSION", async ({
-  page,
-}) => {
-  await mount(page, DoubleCounter);
+__TEST__(
+  "Accessing and updating a signal value from inside a task doesn't cause infinite recursion",
+  async ({ page }) => {
+    await mount(page, DoubleCounter);
 
-  const button = page.getByText("count: 1");
-  await expect(button).toBeVisible();
+    const button = page.getByText("count: 1");
+    await expect(button).toBeVisible();
 
-  await button.click();
-  await expect(page.getByText("count: 3")).toBeVisible();
-});
+    await button.click();
+    await expect(page.getByText("count: 3")).toBeVisible();
+  },
+);
 
 export function ClickLogger() {
   const $clicks = signal(0);
@@ -58,8 +57,8 @@ export function ClickLogger2X() {
   return html`<button onclick=${() => $clicks.val++}>Click me!</button>`;
 }
 
-test("TASKS RERUN EVEN WHEN NOTHING RERENDERS", async ({ page }) => {
-  let logs = [];
+__TEST__("Tasks rerun even when nothing rerenders", async ({ page }) => {
+  const logs = [];
   page.on("console", (msg) => logs.push(msg.text()));
 
   await mount(page, ClickLogger);
@@ -76,35 +75,39 @@ test("TASKS RERUN EVEN WHEN NOTHING RERENDERS", async ({ page }) => {
   expect(logs.findLast((log) => log.startsWith("You clicked"))).toBe(
     "You clicked 3 times",
   );
-
-  logs = [];
-
-  // Tasks must wait for any components to finish rendering before running, but they should
-  // not wait if the only other pending operations are other tasks (if a task
-  // incorrectly decides to wait then it will never run)
-  await mount(page, ClickLogger2X);
-
-  await button.click();
-  await button.click();
-  await button.click();
-
-  expect(logs.filter((log) => log === "Rendering ClickLogger2X").length).toBe(
-    1,
-  );
-
-  // Clicks + 1 for the task running on mount
-  expect(logs.filter((log) => log.startsWith("You clicked")).length).toBe(4);
-  expect(logs.findLast((log) => log.startsWith("You clicked"))).toBe(
-    "You clicked 3 times",
-  );
-
-  expect(
-    logs.filter((log) => log.startsWith("In case you missed it")).length,
-  ).toBe(4);
-  expect(logs.findLast((log) => log.startsWith("In case you missed it"))).toBe(
-    "In case you missed it, you clicked 3 times!",
-  );
 });
+
+__TEST__(
+  "Multiple tasks rerun even when nothing rerenders",
+  async ({ page }) => {
+    const logs = [];
+    page.on("console", (msg) => logs.push(msg.text()));
+
+    await mount(page, ClickLogger2X);
+    const button = page.getByText("Click me!");
+
+    await button.click();
+    await button.click();
+    await button.click();
+
+    expect(logs.filter((log) => log === "Rendering ClickLogger2X").length).toBe(
+      1,
+    );
+
+    // Clicks + 1 for the task running on mount
+    expect(logs.filter((log) => log.startsWith("You clicked")).length).toBe(4);
+    expect(logs.findLast((log) => log.startsWith("You clicked"))).toBe(
+      "You clicked 3 times",
+    );
+
+    expect(
+      logs.filter((log) => log.startsWith("In case you missed it")).length,
+    ).toBe(4);
+    expect(
+      logs.findLast((log) => log.startsWith("In case you missed it")),
+    ).toBe("In case you missed it, you clicked 3 times!");
+  },
+);
 
 const $count = signal(0);
 
@@ -118,7 +121,7 @@ export function Counter() {
   `;
 }
 
-test("TASKS WORK OUTSIDE COMOPONENTS", async ({ page }) => {
+__TEST__("Tasks work outside comoponents", async ({ page }) => {
   const logs = [];
   page.on("console", (msg) => logs.push(msg.text()));
 

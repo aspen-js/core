@@ -1,7 +1,5 @@
-import { test, expect } from "@playwright/test";
-
+import { test as __TEST__, expect } from "@playwright/test";
 import { html, signal, task } from "#aspen";
-
 import { mountFrom } from "./utils.js";
 
 const mount = (page, component) =>
@@ -37,31 +35,34 @@ export function InputWithResetBttn() {
   `;
 }
 
-test("UPDATING A SIGNAL FROM A TASK DOESN'T CAUSE EXTRA LISTENERS TO BE ATTACHED", async ({
-  page,
-}) => {
-  const logs = [];
-  page.on("console", (msg) => logs.push(msg.text()));
+__TEST__(
+  "Updating a signal from a task doesn't cause extra listeners to be attached",
+  async ({ page }) => {
+    const logs = [];
+    page.on("console", (msg) => logs.push(msg.text()));
 
-  await mount(page, InputWithResetBttn);
+    await mount(page, InputWithResetBttn);
 
-  const button = page.getByText("X");
-  const input = page.getByPlaceholder("Your text here");
+    const button = page.getByText("X");
+    const input = page.getByPlaceholder("Your text here");
 
-  await input.fill("hello world");
+    await input.fill("hello world");
 
-  expect(await input.getAttribute("value")).toBe("hello world");
+    expect(await input.getAttribute("value")).toBe("hello world");
 
-  await button.click();
-  await input.fill("hello");
+    await button.click();
+    await input.fill("hello");
 
-  await button.click();
-  await input.fill("hola");
+    await button.click();
+    await input.fill("hola");
 
-  await button.click();
+    await button.click();
 
-  expect(logs.filter((message) => message === "resetting text").length).toBe(3);
-});
+    expect(logs.filter((message) => message === "resetting text").length).toBe(
+      3,
+    );
+  },
+);
 
 export function DoubleCounter() {
   const $count = signal(0);
@@ -77,27 +78,28 @@ export function DoubleCounter() {
   `;
 }
 
-test("CANNOT DECREMENT COUNTER WITH A TASK THAT INCREMENTS THE COUNT", async ({
-  page,
-}) => {
-  await mount(page, DoubleCounter);
+__TEST__(
+  "Cannot decrement counter with a task that increments the count",
+  async ({ page }) => {
+    await mount(page, DoubleCounter);
 
-  const count = page.getByText("count:");
+    const count = page.getByText("count:");
 
-  const increment = page.getByText("↑");
-  const decrement = page.getByText("↓");
+    const increment = page.getByText("↑");
+    const decrement = page.getByText("↓");
 
-  await increment.click();
-  await increment.click();
+    await increment.click();
+    await increment.click();
 
-  await expect(count).toContainText("count: 5");
+    await expect(count).toContainText("count: 5");
 
-  await decrement.click();
-  await expect(count).toContainText("count: 5");
+    await decrement.click();
+    await expect(count).toContainText("count: 5");
 
-  await decrement.click();
-  await expect(count).toContainText("count: 5");
+    await decrement.click();
+    await expect(count).toContainText("count: 5");
 
-  await decrement.click();
-  await expect(count).toContainText("count: 5");
-});
+    await decrement.click();
+    await expect(count).toContainText("count: 5");
+  },
+);

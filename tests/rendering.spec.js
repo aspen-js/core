@@ -1,5 +1,5 @@
 import { test as __TEST__, expect } from "@playwright/test";
-import { html, signal, task } from "#aspen";
+import { html, signal } from "#aspen";
 import { mountFrom } from "./utils.js";
 
 const mount = (page, component) =>

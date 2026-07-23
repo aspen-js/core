@@ -1135,6 +1135,8 @@ function render(key, node, depth = 0, domMutations = []) {
         !(
           (typeof prevInterp[SignalIdProperty] === "symbol" ||
             typeof currentInterp[SignalIdProperty] === "symbol") &&
+          // TODO: Pretty sure if the underlying object reference is the same
+          // you can also count the props as equal (think of the todo list case)
           prevInterp[SignalIdProperty] === currentInterp[SignalIdProperty] &&
           prevInterp[PathProperty] === currentInterp[PathProperty]
         ))

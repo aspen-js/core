@@ -232,7 +232,7 @@ __TEST__(
     const logs = [];
     page.on("console", (msg) => logs.push(msg.text()));
 
-    mount(page, CounterWithInputAndReset);
+    await mount(page, CounterWithInputAndReset);
 
     const increment = page.getByText("count:");
     const input = page.getByPlaceholder("Type anything");

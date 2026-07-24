@@ -54,7 +54,7 @@ function isPrimitive(value) {
   );
 }
 
-function canRenderPrimitive(value) {
+function isRenderablePrimitive(value) {
   return typeof value === "string" || typeof value === "number";
 }
 
@@ -537,7 +537,7 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
   }
 
   if (isPrimitive(template)) {
-    if (canRenderPrimitive(template)) {
+    if (isRenderablePrimitive(template)) {
       result.html += escapeHtml(template);
     }
 
@@ -597,7 +597,7 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
             ];
 
           if (isPrimitive(value)) {
-            if (canRenderPrimitive(value)) {
+            if (isRenderablePrimitive(value)) {
               result.html += escapeHtml(value);
             }
           } else if (isTemplate(value)) {
@@ -857,7 +857,7 @@ function render(key, node, depth = 0, domMutations = []) {
 
     domMutations.push(() =>
       // No need to escape since setHtml with mode "text" calls createTextNode
-      setHtml(key, canRenderPrimitive(template) ? template : "", "text"),
+      setHtml(key, isRenderablePrimitive(template) ? template : "", "text"),
     );
 
     if (depth === 0 && domMutations.length) {
@@ -914,7 +914,7 @@ function render(key, node, depth = 0, domMutations = []) {
         domMutations.push(() =>
           // No need to escape since setHtml with mode "text" calls
           // createTextNode
-          setHtml(slotKey, canRenderPrimitive(value) ? value : "", "text"),
+          setHtml(slotKey, isRenderablePrimitive(value) ? value : "", "text"),
         );
       }
     } else if (isTemplate(value)) {
@@ -1071,8 +1071,11 @@ function render(key, node, depth = 0, domMutations = []) {
             element.checked !== isHtmlTruthy(attrValue)
           ) {
             element.checked = isHtmlTruthy(attrValue);
-          } else if (attr.name === "value" && element.value !== attrValue) {
-            element.value = attrValue;
+          } else if (
+            attr.name === "value" &&
+            element.value !== (attrValue ?? "").toString()
+          ) {
+            element.value = (attrValue ?? "").toString();
           }
         }
       });

@@ -1082,8 +1082,6 @@ function render(key, node, depth = 0, domMutations = []) {
     }
   });
 
-  // TODO: special handling for functions that don't reference stale variables
-  // but are not themselves referencially stable?
   template.listeners.forEach((listener) => {
     const handler = template.interpolations[listener.interpolationIndex];
     const prevHandler =
@@ -1118,6 +1116,11 @@ function render(key, node, depth = 0, domMutations = []) {
     if (
       templatesByKey[key].props[i].value !== prop.value ||
       (prevInterp !== currentInterp &&
+        // TODO: In some cases signals can probably be considered equal for
+        // prop comparison if the path has changed but the underlying object
+        // is the same (e.g. an array item after another item has been
+        // inserted before it)
+
         // Signals with the same id and path are considered equal here since
         // the component will re-render whenever the signal is updated
         !(
@@ -1166,24 +1169,26 @@ function render(key, node, depth = 0, domMutations = []) {
 }
 
 // TODO: probably wouldn't be too hard to combine these
+
 const accessByKey = {};
 const enumeratedAccessByKey = {};
 
 // A weak map removes the need to manually cleanup signal metadata for
-// unmounted signals. The cleanup and cleanupChildren functions remove
-// references to unmounted signals from the lookup objects, and since those are
-// the only way to access the #signalId symbols, which are used as used as
-// keys here, entries for unmounted signals become eligible for garbage
-// collection
+// unmounted signals. The cleanup and cleanupChildren functions remove all
+// other references which frees them up for garbage collection here
 const signals = new WeakMap();
 
-function subscribe(lookup, signalId, path) {
-  if (renderStack.at(-1) && renderStack.at(-1).type !== "peek") {
-    const access = (lookup[renderStack.at(-1).key] ||= {});
-    const paths = (access[signalId] ||= {});
+function subscribe(signalId, path, prop) {
+  const { key, type } = renderStack.at(-1) || {};
 
-    if (!paths[path]) {
-      paths[path] = renderStack.at(-1);
+  if (key && type !== "peek") {
+    const lookup = prop ? accessByKey : enumeratedAccessByKey;
+    const fullPath = prop ? path + "." + prop : path;
+    const subscriberAccess = (lookup[key] ||= {});
+    const accessByPath = (subscriberAccess[signalId] ||= {});
+
+    if (!accessByPath[fullPath]) {
+      accessByPath[fullPath] = renderStack.at(-1);
     }
   }
 }
@@ -1223,53 +1228,54 @@ function shouldDoDeepUpdate(prevValue, currentValue) {
   }
 }
 
-function notifySubscribers(lookup, signalId, path, currentVal, deep) {
+function notifySubscribers(signalId, path, prop, value) {
   const { prevValues } = signals.get(signalId);
-
   const plannedUpdatesByKey = {};
-  const keys = [
-    // Symbol keys are used for tasks defined outside components
-    ...Object.getOwnPropertySymbols(lookup),
-    ...Object.keys(lookup),
-  ];
 
-  if (!deep) {
-    // Notify subscribers even if prev and current values are equal according
-    // to ===. For subscribers that enumerate object properties or array items,
-    // a value may have changed in a meaningful way, even if it has the same
-    // reference, e.g. because of a call to .push on an array or the setting of
-    // an object property
+  // Notify subscribers in enumeratedAccessByKey even if prev and current values
+  // are equal according to ===. For subscribers that enumerate object
+  // properties or array items, a value may have changed in a meaningful way
+  // even if it has the same reference, e.g. because of a call to .push on an
+  // array or the setting of an object property
+  [
+    ...Object.getOwnPropertySymbols(enumeratedAccessByKey),
+    ...Object.keys(enumeratedAccessByKey),
+  ].forEach((key) => {
+    const update = enumeratedAccessByKey[key]?.[signalId]?.[path];
+    if (update) {
+      plannedUpdatesByKey[key] = update;
+    }
+  });
 
-    keys.forEach((key) => {
-      const update = lookup[key]?.[signalId]?.[path];
-      if (update) {
-        plannedUpdatesByKey[key] = update;
-      }
-    });
-  } else {
-    // Notify subscribers only about meaninful changes to leaf nodes. A change
-    // is meaningful if:
-    // - prev and current primitive values are no longer equal
-    // - a value is changing from a primitive to a non-primitive value or vice
-    //   versa (changing from branch to leaf or leaf to branch)
-    // - a path has become unreachable
+  // Notify subscribers in accessByKey only about meaningful changes to leaf
+  // nodes. A change is meaningful if:
+  // - prev and current primitive values are no longer equal
+  // - a value is changing from a primitive to a non-primitive value or vice
+  //   versa (changing from branch to leaf or leaf to branch)
+  // - a path has become unreachable
+  if (prop) {
+    const pathWithProp = path + "." + prop;
+    const keys = [
+      ...Object.getOwnPropertySymbols(accessByKey),
+      ...Object.keys(accessByKey),
+    ];
 
     for (const key of keys) {
       if (key in plannedUpdatesByKey) continue;
 
-      Object.entries(lookup[key]?.[signalId] || {}).forEach(
+      Object.entries(accessByKey[key]?.[signalId] || {}).forEach(
         ([deepPath, update]) => {
-          if (deepPath === path) {
-            if (shouldDoDeepUpdate(prevValues[path], currentVal)) {
+          if (deepPath === pathWithProp) {
+            if (shouldDoDeepUpdate(prevValues[pathWithProp], value)) {
               plannedUpdatesByKey[key] = update;
             }
-          } else if (deepPath.startsWith(path + ".")) {
-            const pathToCheck = deepPath.slice(path.length + 1);
+          } else if (deepPath.startsWith(pathWithProp + ".")) {
+            const pathToCheck = deepPath.slice(pathWithProp.length + 1);
 
             if (
               shouldDoDeepUpdate(
-                peek(prevValues[path], pathToCheck),
-                peek(currentVal, pathToCheck),
+                peek(prevValues[pathWithProp], pathToCheck),
+                peek(value, pathToCheck),
               )
             ) {
               plannedUpdatesByKey[key] = update;
@@ -1307,7 +1313,7 @@ function notifySubscribers(lookup, signalId, path, currentVal, deep) {
     })
     .forEach(([key, update]) => {
       // One last check to make sure the key hasn't been cleaned up
-      if (lookup[key]) {
+      if (enumeratedAccessByKey[key] || accessByKey[key]) {
         update.onUpdate({ plannedRenders });
       }
     });
@@ -1356,9 +1362,9 @@ class ProxyHandler {
         Array.isArray(target) &&
         (typeof value === "function" || prop === "length")
       ) {
-        subscribe(enumeratedAccessByKey, this.#signalId, this.#path);
+        subscribe(this.#signalId, this.#path);
       } else {
-        subscribe(accessByKey, this.#signalId, this.#path + "." + prop);
+        subscribe(this.#signalId, this.#path, prop);
       }
     }
 
@@ -1382,12 +1388,7 @@ class ProxyHandler {
         // subscribers know about them when the method is complete
         const result = target[prop](...args);
 
-        notifySubscribers(
-          enumeratedAccessByKey,
-          this.#signalId,
-          this.#path,
-          target,
-        );
+        notifySubscribers(this.#signalId, this.#path);
 
         return result;
       };
@@ -1397,13 +1398,13 @@ class ProxyHandler {
   }
 
   has(target, prop, receiver) {
-    subscribe(enumeratedAccessByKey, this.#signalId, this.#path);
+    subscribe(this.#signalId, this.#path);
 
     return Reflect.has(target, prop, receiver);
   }
 
   ownKeys(target) {
-    subscribe(enumeratedAccessByKey, this.#signalId, this.#path);
+    subscribe(this.#signalId, this.#path);
 
     return Reflect.ownKeys(target);
   }
@@ -1419,22 +1420,7 @@ class ProxyHandler {
 
     Reflect.set(target, prop, value, receiver);
 
-    if (Array.isArray(target) || isPlainObject(target)) {
-      notifySubscribers(
-        enumeratedAccessByKey,
-        this.#signalId,
-        this.#path,
-        target,
-      );
-    }
-
-    notifySubscribers(
-      accessByKey,
-      this.#signalId,
-      this.#path + "." + prop,
-      value,
-      true,
-    );
+    notifySubscribers(this.#signalId, this.#path, prop, value);
 
     return true;
   }
@@ -1443,12 +1429,7 @@ class ProxyHandler {
   deleteProperty(target, prop) {
     Reflect.deleteProperty(target, prop, receiver);
 
-    notifySubscribers(
-      enumeratedAccessByKey,
-      this.#signalId,
-      this.#path,
-      target,
-    );
+    notifySubscribers(this.#signalId, this.#path);
 
     return true;
   }

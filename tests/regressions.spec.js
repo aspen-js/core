@@ -103,3 +103,34 @@ __TEST__(
     await expect(count).toContainText("count: 5");
   },
 );
+
+export function JsonLogger() {
+  const $count = signal({ count: 0 });
+
+  task(() => {
+    console.log("state:", JSON.stringify($count.val, null, 2));
+  });
+
+  return html`<button onclick=${() => $count.val.count++}>
+    count: ${$count.val.count}
+  </button>`;
+}
+
+__TEST__(
+  "Stringifying an object in a task doesn't cause extra task runs",
+  async ({ page }) => {
+    await mount(page, JsonLogger);
+
+    const logs = [];
+    page.on("console", (msg) => logs.push(msg.text()));
+
+    const button = page.getByText("count:");
+
+    await button.click();
+    await button.click();
+    await button.click();
+
+    expect(button).toContainText("count: 3");
+    expect(logs.filter((log) => log.startsWith("state:")).length).toBe(3);
+  },
+);

@@ -227,7 +227,7 @@ export function CounterWithInputAndReset() {
 }
 
 __TEST__(
-  "A task runs after all renders finish when multiple renders occur due to a single signal update",
+  "A task runs after all renders when multiple renders occur due to a single signal update",
   async ({ page }) => {
     const logs = [];
     page.on("console", (msg) => logs.push(msg.text()));

@@ -532,7 +532,12 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
       onUpdate: () => render(key, node),
     });
 
-    template = node(propsByKey[key] || {});
+    const props = resolveSignalProps(propsByKey[key] || {});
+
+    componentHookIndex = 0;
+    template = node(props);
+    componentHookIndex = 0;
+
     renderStack.pop();
   }
 
@@ -863,8 +868,10 @@ function render(key, node, depth = 0, domMutations = []) {
     if (depth === 0 && domMutations.length) {
       domMutations.forEach((mutation) => mutation());
 
-      while (deferredTasks.length) {
-        deferredTasks.shift()();
+      if (plannedRenders === 1) {
+        while (deferredTasks.length) {
+          deferredTasks.shift()();
+        }
       }
     }
 
@@ -892,8 +899,10 @@ function render(key, node, depth = 0, domMutations = []) {
     if (depth === 0 && domMutations.length) {
       domMutations.forEach((mutation) => mutation());
 
-      while (deferredTasks.length) {
-        deferredTasks.shift()();
+      if (plannedRenders === 1) {
+        while (deferredTasks.length) {
+          deferredTasks.shift()();
+        }
       }
     }
 
@@ -1162,8 +1171,10 @@ function render(key, node, depth = 0, domMutations = []) {
   if (depth === 0 && domMutations.length) {
     domMutations.forEach((mutation) => mutation());
 
-    while (deferredTasks.length) {
-      deferredTasks.shift()();
+    if (plannedRenders === 1) {
+      while (deferredTasks.length) {
+        deferredTasks.shift()();
+      }
     }
   }
 }
@@ -1228,6 +1239,8 @@ function shouldDoDeepUpdate(prevValue, currentValue) {
   }
 }
 
+let plannedRenders = 0;
+
 function notifySubscribers(signalId, path, prop, value) {
   const { prevValues } = signals.get(signalId);
   const plannedUpdatesByKey = {};
@@ -1286,14 +1299,14 @@ function notifySubscribers(signalId, path, prop, value) {
     }
   }
 
-  const plannedRenders = Object.values(plannedUpdatesByKey).filter(
+  plannedRenders += Object.values(plannedUpdatesByKey).filter(
     (update) => update.type === "component",
   ).length;
 
   // Schedule tasks defined outside of components. See comment below for why
   // tasks must be scheduled before components render
   Object.getOwnPropertySymbols(plannedUpdatesByKey).forEach((key) =>
-    plannedUpdatesByKey[key].onUpdate({ plannedRenders }),
+    plannedUpdatesByKey[key].onUpdate(),
   );
 
   Object.entries(plannedUpdatesByKey)
@@ -1315,6 +1328,10 @@ function notifySubscribers(signalId, path, prop, value) {
       // One last check to make sure the key hasn't been cleaned up
       if (enumeratedAccessByKey[key] || accessByKey[key]) {
         update.onUpdate({ plannedRenders });
+      }
+
+      if (update.type === "component") {
+        plannedRenders--;
       }
     });
 }
@@ -1511,7 +1528,7 @@ export function task(callback) {
     renderStack.push({
       type: "task",
       key: taskKey,
-      onUpdate: ({ plannedRenders }) => {
+      onUpdate: () => {
         if (renderStack.at(-1)?.key === taskKey) {
           // Prevent infinite recursion by doing nothing if the update happened
           // during the task itself

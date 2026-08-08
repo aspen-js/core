@@ -32,3 +32,7 @@ export async function mountFrom(filename, page, component) {
     </html>
 `);
 }
+
+export async function tick() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}

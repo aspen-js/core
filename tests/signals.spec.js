@@ -1,6 +1,6 @@
 import { test as __TEST__, expect } from "@playwright/test";
 import { html, signal, task } from "#aspen";
-import { mountFrom } from "./utils.js";
+import { mountFrom, tick } from "./utils.js";
 
 const mount = (page, component) =>
   mountFrom("signals.spec.js", page, component);
@@ -162,6 +162,7 @@ __TEST__(
     logs = [];
 
     await name.fill("The real slim shady");
+    await tick();
 
     expect(logs.length).toBe(2);
     expect(logs[0]).toBe("[Name] rendering");
@@ -180,6 +181,7 @@ __TEST__(
     logs = [];
 
     await phone.fill("(123) 456-7890");
+    await tick();
 
     expect(logs.length).toBe(2);
     expect(logs[0]).toBe("[Phone] rendering");

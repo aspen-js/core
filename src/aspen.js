@@ -19,6 +19,7 @@ function debug(...msg) {
 
 function isValidKey(key) {
   return (
+    typeof key === "symbol" ||
     (typeof key === "string" && key.trim()) ||
     (typeof key === "number" && !isNaN(key))
   );
@@ -170,10 +171,7 @@ export function html(htmlStringsOrConfig, ...interpolations) {
   if (Array.isArray(htmlStringsOrConfig)) {
     const strings = htmlStringsOrConfig;
     return getTemplateBuilder(undefined, strings, ...interpolations)();
-  } else if (
-    typeof htmlStringsOrConfig === "string" ||
-    typeof htmlStringsOrConfig === "number"
-  ) {
+  } else if (isValidKey(htmlStringsOrConfig)) {
     const key = htmlStringsOrConfig;
     return getTemplateBuilder(key);
   } else {
@@ -189,13 +187,7 @@ function getTemplateBuilder(key, defaultHtmlStrings, ...defaultInterpolations) {
 
     return {
       _isTemplateNode: true,
-      // TODO: Use a lookup for assigned keys so that they don't have to go in
-      // the dom directly and symbols can be allowed
-      assignedkey: isValidKey(key)
-        ? // Base64 encode keys to prevent injection since these end up in the
-          // dom (this also prevents collision with automatically created keys)
-          btoa(key)
-        : undefined,
+      assignedKey: isValidKey(key) ? key : undefined,
       // NOTE: when determining dom changes, object equality can be used
       // instead of a hash for templates created when parsing component
       // children
@@ -614,12 +606,12 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
               throw new Error(INVALID_ARRAY_ITEM);
             }
 
-            if (!value.every((item) => isValidKey(item.assignedkey))) {
+            if (!value.every((item) => isValidKey(item.assignedKey))) {
               throw new Error(MISSING_ARRAY_ITEM_KEY);
             }
 
             value.forEach((item) => {
-              const itemKey = activeKey + "." + item.assignedkey;
+              const itemKey = getArrayItemKey(activeKey, item.assignedKey);
 
               item.components ||= template.components;
 
@@ -789,6 +781,7 @@ function clearNested(key, obj, clearSelf = true) {
       return;
     }
 
+    // TODO: See if you can make task keys fit better with the existing system
     const cacheKey = objKey.split("#task")[0];
 
     if (cacheKey.startsWith(key) && (clearSelf || cacheKey !== key)) {
@@ -800,6 +793,7 @@ function clearNested(key, obj, clearSelf = true) {
 function cleanup(key) {
   clearNested(key, elementsByKey);
   clearNested(key, templatesByKey);
+  clearNested(key, arrayItemKeysByKey);
   clearNested(key, propsByKey);
   clearNested(key, hookInitsByKey);
   clearNested(key, componentsByKey);
@@ -811,6 +805,7 @@ function cleanup(key) {
 function cleanupChildren(key) {
   clearNested(key, elementsByKey);
   clearNested(key, templatesByKey);
+  clearNested(key, arrayItemKeysByKey);
   clearNested(key, propsByKey, false);
   clearNested(key, hookInitsByKey, false);
   clearNested(key, componentsByKey, false);
@@ -830,6 +825,46 @@ function resolveSignalProps(props) {
       return [key, value];
     }),
   );
+}
+
+const arrayItemKeysByKey = {};
+
+/**
+ * Map an array item key, which can be a symbol, string, or number, to a string
+ * that can safely be used as a key
+ */
+function getArrayItemKey(slotKey, assignedKey) {
+  const lookup = (arrayItemKeysByKey[slotKey] ||= {
+    count: 0,
+    keys: {},
+    preOwnedKeys: [],
+  });
+
+  const key = (lookup.keys[assignedKey] ||= lookup.preOwnedKeys.length
+    ? // Reuse keys of removed items to prevent key size from growing without bound
+      // as array items are removed and added
+      lookup.preOwnedKeys.shift()
+    : // Prefix array item keys with i to prevent collisions with non-array
+      // item keys
+      `i${lookup.count++}`);
+
+  return slotKey + "." + key;
+}
+
+/**
+ * Mark an array item key as safe to reuse
+ */
+function freeArrayItemKey(slotKey, assignedKey) {
+  const lookup = (arrayItemKeysByKey[slotKey] ||= {
+    count: 0,
+    keys: {},
+    preOwnedKeys: [],
+  });
+
+  lookup.preOwnedKeys.push(lookup.keys[assignedKey]);
+  lookup.preOwnedKeys.sort();
+
+  delete lookup.keys[assignedKey];
 }
 
 function render(key, node, depth = 0, domMutations = []) {
@@ -949,7 +984,7 @@ function render(key, node, depth = 0, domMutations = []) {
         throw new Error(INVALID_ARRAY_ITEM);
       }
 
-      if (!value.every((item) => isValidKey(item.assignedkey))) {
+      if (!value.every((item) => isValidKey(item.assignedKey))) {
         throw new Error(MISSING_ARRAY_ITEM_KEY);
       }
 
@@ -958,12 +993,12 @@ function render(key, node, depth = 0, domMutations = []) {
         renderAll = true;
       } else {
         const prevIndexByKey = Object.fromEntries(
-          prevValue.map((prevItem, i) => [prevItem.assignedkey, i]),
+          prevValue.map((prevItem, i) => [prevItem.assignedKey, i]),
         );
 
         let maxIndex = 0;
         const orderChanged = value.some((item) => {
-          const prevIndex = prevIndexByKey[item.assignedkey];
+          const prevIndex = prevIndexByKey[item.assignedKey];
           if (typeof prevIndex === "number") {
             if (prevIndex < maxIndex) {
               return true;
@@ -984,7 +1019,7 @@ function render(key, node, depth = 0, domMutations = []) {
           (result, item) => {
             item.components ||= template.components;
 
-            const itemKey = slotKey + "." + item.assignedkey;
+            const itemKey = getArrayItemKey(slotKey, item.assignedKey);
             const currentResult = renderToString(itemKey, item, {
               html: result.html + `<!-- ${itemKey} -->`,
               listenersByKey: result.listenersByKey,
@@ -1004,19 +1039,25 @@ function render(key, node, depth = 0, domMutations = []) {
         // Removed items
         prevValue.forEach((prevItem) => {
           if (
-            !value.some((item) => item.assignedkey === prevItem.assignedkey)
+            !value.some((item) => item.assignedKey === prevItem.assignedKey)
           ) {
-            const itemKey = slotKey + "." + prevItem.assignedkey;
+            const itemKey = getArrayItemKey(slotKey, prevItem.assignedKey);
             cleanup(itemKey);
-            domMutations.push(() => setHtml(itemKey, "", "overwrite"));
+            domMutations.push(() => {
+              setHtml(itemKey, "", "overwrite");
+
+              // Once the item has been removed from the dom, its key can be
+              // reused
+              freeArrayItemKey(slotKey, prevItem.assignedKey);
+            });
           }
         });
 
         // Added or changed items
         value.toReversed().forEach((item, i, reversed) => {
-          const itemKey = slotKey + "." + item.assignedkey;
+          const itemKey = getArrayItemKey(slotKey, item.assignedKey);
           const prevItem = prevValue.find(
-            (prevItem) => prevItem.assignedkey === item.assignedkey,
+            (prevItem) => prevItem.assignedKey === item.assignedKey,
           );
 
           item.components ||= template.components;
@@ -1027,7 +1068,7 @@ function render(key, node, depth = 0, domMutations = []) {
               .slice(i + 1)
               .find((item) =>
                 prevValue.some(
-                  (prevItem) => prevItem.assignedkey === item.assignedkey,
+                  (prevItem) => prevItem.assignedKey === item.assignedKey,
                 ),
               );
 
@@ -1035,7 +1076,11 @@ function render(key, node, depth = 0, domMutations = []) {
               const itemHtml = `<!-- ${itemKey} -->${result.html}<!-- ${itemKey} -->`;
 
               if (anchor) {
-                setHtml(slotKey + "." + anchor.assignedkey, itemHtml, "append");
+                setHtml(
+                  getArrayItemKey(slotKey, anchor.assignedKey),
+                  itemHtml,
+                  "append",
+                );
               } else {
                 setHtml(slotKey, itemHtml, "insert");
               }

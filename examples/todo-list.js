@@ -1,27 +1,22 @@
 import { signal, html } from "aspen";
 
-let todoCount = 0;
-function todoId() {
-  return todoCount++;
-}
-
-const initialTodos = [...Array(3)].map(() => ({
-  id: todoId(),
-  checked: false,
-  text: "",
-}));
-
 export function TodoList() {
   console.log("[TodoList] rendering");
 
-  const $todos = signal(initialTodos);
+  const $todos = signal(
+    [...Array(3)].map(() => ({
+      id: Symbol(),
+      checked: false,
+      text: "",
+    })),
+  );
 
   return html`
     <div>
       <h1 style="display: inline">Todos</h1>
       <button
         onClick=${() =>
-          $todos.val.push({ id: todoId(), text: "", checked: false })}
+          $todos.val.push({ id: Symbol(), text: "", checked: false })}
       >
         +
       </button>
@@ -38,7 +33,7 @@ export function TodoList() {
 }
 
 export function Todo({ id, $todos, index }) {
-  console.log(`[Todo ${id}] rendering`);
+  console.log(`[Todo ${index}] rendering`);
 
   const $todo = $todos.val[index];
 
@@ -51,14 +46,13 @@ export function Todo({ id, $todos, index }) {
       />
       <input
         type="text"
-        placeholder=${`To do [${id}]`}
         value=${$todo.text}
         onInput=${(e) => ($todo.text = e.target.value)}
       />
       <button
         onClick=${() =>
           $todos.val.splice(index + 1, 0, {
-            id: todoId(),
+            id: Symbol(),
             text: "",
             checked: false,
           })}

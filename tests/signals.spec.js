@@ -227,6 +227,7 @@ __TEST__(
 
     await name.fill("The real slim shady");
     await phone.fill("(123) 456-7890");
+    await tick();
 
     expect(logs.length).toBe(4);
     expect(logs.at(-1)).toBe(
@@ -244,6 +245,7 @@ __TEST__(
     logs = [];
 
     await reset.click();
+    await tick();
 
     expect(logs.length).toBe(3);
     expect(logs[0]).toBe("[Name] rendering");

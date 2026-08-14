@@ -1503,6 +1503,7 @@ const hookInitsByKey = {};
 
 let componentHookIndex = 0;
 
+// TODO: Seems like you could dry this up a bit
 export function signal(initialValue) {
   const currentKey =
     renderStack.at(-1)?.type === "component"

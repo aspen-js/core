@@ -902,12 +902,6 @@ function render(key, node, depth = 0, domMutations = []) {
 
     if (depth === 0 && domMutations.length) {
       domMutations.forEach((mutation) => mutation());
-
-      if (plannedRenders === 1) {
-        while (deferredTasks.length) {
-          deferredTasks.shift()();
-        }
-      }
     }
 
     return;
@@ -933,12 +927,6 @@ function render(key, node, depth = 0, domMutations = []) {
 
     if (depth === 0 && domMutations.length) {
       domMutations.forEach((mutation) => mutation());
-
-      if (plannedRenders === 1) {
-        while (deferredTasks.length) {
-          deferredTasks.shift()();
-        }
-      }
     }
 
     return;
@@ -1217,12 +1205,6 @@ function render(key, node, depth = 0, domMutations = []) {
 
   if (depth === 0 && domMutations.length) {
     domMutations.forEach((mutation) => mutation());
-
-    if (plannedRenders === 1) {
-      while (deferredTasks.length) {
-        deferredTasks.shift()();
-      }
-    }
   }
 }
 
@@ -1381,6 +1363,12 @@ function notifySubscribers(signalId, path, prop, value) {
         plannedRenders--;
       }
     });
+
+  if (plannedRenders === 0) {
+    while (deferredTasks.length) {
+      deferredTasks.shift()();
+    }
+  }
 }
 
 const PathProperty = Symbol();

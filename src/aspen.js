@@ -1248,7 +1248,9 @@ function peek(obj, path) {
 
   let value = obj;
   parts.forEach((part) => {
-    if (isPlainObject(value)) {
+    if (Array.isArray(value) && !isNaN(parseInt(part))) {
+      value = value[parseInt(part)];
+    } else if (isPlainObject(value)) {
       value = value[part];
     } else {
       value = PathUnreachable;
@@ -1342,6 +1344,9 @@ function notifySubscribers(signalId, path, prop, value) {
     .sort(([a], [b]) => {
       const isATask = a.includes("#task");
       const isBTask = b.includes("#task");
+
+      // TODO: Should sort by number of path segments instead
+      // of length
 
       // Sort tasks first so that the deferredTasks array is taken care of when
       // rendering completes

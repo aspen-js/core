@@ -152,7 +152,9 @@ export function CounterWithReversibleLayout() {
 __TEST__(
   "Components are available when re-rendering children",
   async ({ page }) => {
-    page.on("console", (msg) => console.log(msg.text()));
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error));
+
     await mount(page, CounterWithReversibleLayout);
 
     const elements = page.locator("#count-bttn, #greeting");
@@ -172,5 +174,7 @@ __TEST__(
     await increment.click();
 
     await expect(increment).toHaveText("count: 3");
+
+    expect(errors.length).toBe(0);
   },
 );

@@ -387,6 +387,7 @@ function parseTemplateInPlace(template) {
                 listeners: [],
                 slots: [],
                 props: [],
+                components: template.components,
               },
             });
 
@@ -541,11 +542,12 @@ function renderToString(key, node, result = { html: "", listenersByKey: {} }) {
     return result;
   }
 
+  template.components ||= node.components;
+
   if (!template.parsedHtmlPhrases.length) {
     parseTemplateInPlace(template);
   }
 
-  template.components ||= node.components;
   templatesByKey[key] = template;
 
   template.parsedHtmlPhrases.forEach((phrase, i) => {
@@ -907,11 +909,11 @@ function render(key, node, depth = 0, domMutations = []) {
     return;
   }
 
+  template.components ||= node.components;
+
   if (!template.parsedHtmlPhrases.length) {
     parseTemplateInPlace(template);
   }
-
-  template.components ||= node.components;
 
   if (!templatesByKey[key] || !isTemplateMatch(templatesByKey[key], template)) {
     cleanupChildren(key);

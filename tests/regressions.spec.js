@@ -134,3 +134,43 @@ __TEST__(
     expect(logs.filter((log) => log.startsWith("state:")).length).toBe(3);
   },
 );
+
+export * as CounterWithChildren from "../tests/fixtures/counter-with-children.js";
+export * as Greeting from "../tests/fixtures/greeting.js";
+
+export function CounterWithReversibleLayout() {
+  const $reverse = signal(false);
+
+  return html`
+    <CounterWithChildren reverse=${$reverse.val}>
+      <Greeting />
+    </CounterWithChildren>
+    <button onClick=${() => ($reverse.val = !$reverse.val)}>Reverse</button>
+  `;
+}
+
+__TEST__(
+  "Components are available when re-rendering children",
+  async ({ page }) => {
+    page.on("console", (msg) => console.log(msg.text()));
+    await mount(page, CounterWithReversibleLayout);
+
+    const elements = page.locator("#count-bttn, #greeting");
+    const reverse = page.getByText("Reverse");
+    const increment = page.getByText("count:");
+
+    await expect(elements).toHaveText(["count: 0", "hello world"]);
+
+    await reverse.click();
+
+    await expect(elements).toHaveText(["hello world", "count: 0"], {
+      timeout: 500,
+    });
+
+    await increment.click();
+    await increment.click();
+    await increment.click();
+
+    await expect(increment).toHaveText("count: 3");
+  },
+);

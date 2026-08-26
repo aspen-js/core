@@ -33,18 +33,18 @@ export function Profile({ user }) {
   `;
 }
 
-// export function ProfileCard() {
-//   console.log("[ProfileCard] rendering...");
-//
-//   const $user = signal({ name: "John Doe" });
-//   const $name = signal("John Doe");
-//
-//   return html`
-//     <Profile user=${$user.val} />
-//     <input value=${$name.val} oninput=${(e) => ($name.val = e.target.value)} />
-//     <button onclick=${() => ($user.val = { name: $name.val })}>Save</button>
-//   `;
-// }
+export function ProfileCard() {
+  console.log("[ProfileCard] rendering...");
+
+  const $user = signal({ name: "John Doe" });
+  const $name = signal("John Doe");
+
+  return html`
+    <Profile user=${$user.val} />
+    <input value=${$name.val} oninput=${(e) => ($name.val = e.target.value)} />
+    <button onclick=${() => ($user.val = { name: $name.val })}>Save</button>
+  `;
+}
 
 export function MyInput() {
   // Hooray, this no longer works...
@@ -90,36 +90,4 @@ export function DivOrSpanContainer({ as, children }) {
     : as === "div"
       ? html`<div>${wrapped}</div>`
       : wrapped;
-}
-
-export function ProfileCard({ name, pic }) {
-  console.log("[ProfileCard] rendering...");
-
-  return html`
-    <div>${name}</div>
-    <img src=${pic} alt=${`${name}'s profile pic`} />
-  `;
-}
-
-const profiles = [
-  { name: "Joe", pic: "example.com/a132rasdfa.png" },
-  { name: "Sally", pic: "example.com/alijuwisfdlj.png" },
-  { name: "Bob", pic: "/example.com/fafasdfjljas.png" },
-];
-
-export function ProfileToggle() {
-  const $index = signal(0);
-
-  return html`
-    <ProfileCard
-      name=${profiles[$index.val].name}
-      pic=${profiles[$index.val].pic}
-    />
-    <button
-      onClick=${() =>
-        ($index.val = $index.val >= profiles.length - 1 ? 0 : $index.val + 1)}
-    >
-      Change profile
-    </button>
-  `;
 }

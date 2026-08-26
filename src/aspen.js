@@ -1146,7 +1146,7 @@ function render(key, node, depth = 0, domMutations = []) {
     }
   });
 
-  const keysToRerender = [];
+  const keysToRerender = new Set();
   const renderedPropsByKey = {};
 
   template.props.forEach((prop, i) => {
@@ -1158,21 +1158,22 @@ function render(key, node, depth = 0, domMutations = []) {
 
     // Check prop equality across renders
     if (
-      templatesByKey[key].props[i].value !== prop.value ||
-      (prevInterp !== currentInterp &&
-        // Signals with the same id and path are considered equal here since
-        // the component will re-render whenever the signal is updated
-        !(
-          (typeof prevInterp[SignalIdProperty] === "symbol" ||
-            typeof currentInterp[SignalIdProperty] === "symbol") &&
-          // TODO: Pretty sure if the underlying object reference is the same
-          // you can also count the props as equal (think of the todo list case)
-          // - children should also get special treatment
-          prevInterp[SignalIdProperty] === currentInterp[SignalIdProperty] &&
-          prevInterp[PathProperty] === currentInterp[PathProperty]
-        ))
+      !keysToRerender.has(propKey) &&
+      (templatesByKey[key].props[i].value !== prop.value ||
+        (prevInterp !== currentInterp &&
+          // Signals with the same id and path are considered equal here since
+          // the component will re-render whenever the signal is updated
+          !(
+            (typeof prevInterp[SignalIdProperty] === "symbol" ||
+              typeof currentInterp[SignalIdProperty] === "symbol") &&
+            // TODO: Pretty sure if the underlying object reference is the same
+            // you can also count the props as equal (think of the todo list case)
+            // - children should also get special treatment
+            prevInterp[SignalIdProperty] === currentInterp[SignalIdProperty] &&
+            prevInterp[PathProperty] === currentInterp[PathProperty]
+          )))
     ) {
-      keysToRerender.push(propKey);
+      keysToRerender.add(propKey);
     }
 
     renderedPropsByKey[propKey] ||= {};
@@ -1186,18 +1187,21 @@ function render(key, node, depth = 0, domMutations = []) {
   // equality check above)
   Object.keys(renderedPropsByKey).forEach((key) => {
     if (
+      !keysToRerender.has(key) &&
       Object.keys(propsByKey[key]).length !==
-      Object.keys(renderedPropsByKey[key]).length
+        Object.keys(renderedPropsByKey[key]).length
     ) {
-      keysToRerender.push(key);
+      keysToRerender.add(key);
     }
   });
 
   propsByKey = { ...propsByKey, ...renderedPropsByKey };
 
-  keysToRerender.forEach((key) =>
-    render(key, componentsByKey[key], depth + 1, domMutations),
-  );
+  keysToRerender
+    .values()
+    .forEach((key) =>
+      render(key, componentsByKey[key], depth + 1, domMutations),
+    );
 
   templatesByKey[key] = template;
 

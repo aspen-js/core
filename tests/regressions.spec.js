@@ -223,10 +223,11 @@ __TEST__(
 
     await toggle.click();
     await toggle.click();
-    await toggle.click();
 
     expect(
       logs.filter((log) => log === "[ProfileCard] rendering...").length,
-    ).toBe(4);
+    ).toBe(3);
+
+    await expect(page.getByText("Bob")).toBeVisible();
   },
 );

@@ -10,7 +10,7 @@ export function InputWithResetBttn() {
   const $text = signal("");
 
   // NOTE: using a task to sync one signal with another like this is generally
-  // an anti-pattern, but here it provides a helpful test-case
+  // an anti-pattern, but here it provides a helpful test case
   task(() => {
     if ($resets.val > 0) {
       $text.val = "";
@@ -176,5 +176,57 @@ __TEST__(
     await expect(increment).toHaveText("count: 3");
 
     expect(errors.length).toBe(0);
+  },
+);
+
+export function ProfileCard({ name, pic }) {
+  console.log("[ProfileCard] rendering...");
+
+  return html`
+    <div>${name}</div>
+    <img src=${pic} alt=${`${name}'s profile pic`} />
+  `;
+}
+
+const profiles = [
+  { name: "Joe", pic: "example.com/a132rasdfa.png" },
+  { name: "Sally", pic: "example.com/alijuwisfdlj.png" },
+  { name: "Bob", pic: "/example.com/fafasdfjljas.png" },
+];
+
+export function ProfileToggle() {
+  const $index = signal(0);
+
+  return html`
+    <ProfileCard
+      name=${profiles[$index.val].name}
+      pic=${profiles[$index.val].pic}
+    />
+    <button
+      onClick=${() =>
+        ($index.val = $index.val >= profiles.length - 1 ? 0 : $index.val + 1)}
+    >
+      Change profile
+    </button>
+  `;
+}
+
+__TEST__(
+  "Multiple prop changes in a single cycle don't trigger multiple component renders",
+  async ({ page }) => {
+    const logs = [];
+    page.on("console", (msg) => logs.push(msg.text()));
+
+    await mount(page, ProfileToggle);
+
+    const toggle = page.getByText("Change profile");
+
+    await toggle.click();
+    await toggle.click();
+    await toggle.click();
+
+    expect(
+      logs.filter((log) => log === "[ProfileCard] rendering...").length,
+    ).toBe(4);
   },
 );

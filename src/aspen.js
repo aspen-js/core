@@ -1160,11 +1160,6 @@ function render(key, node, depth = 0, domMutations = []) {
     if (
       templatesByKey[key].props[i].value !== prop.value ||
       (prevInterp !== currentInterp &&
-        // TODO: In some cases signals can probably be considered equal for
-        // prop comparison if the path has changed but the underlying object
-        // is the same (e.g. an array item after another item has been
-        // inserted before it)
-
         // Signals with the same id and path are considered equal here since
         // the component will re-render whenever the signal is updated
         !(
@@ -1172,6 +1167,7 @@ function render(key, node, depth = 0, domMutations = []) {
             typeof currentInterp[SignalIdProperty] === "symbol") &&
           // TODO: Pretty sure if the underlying object reference is the same
           // you can also count the props as equal (think of the todo list case)
+          // - children should also get special treatment
           prevInterp[SignalIdProperty] === currentInterp[SignalIdProperty] &&
           prevInterp[PathProperty] === currentInterp[PathProperty]
         ))

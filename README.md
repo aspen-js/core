@@ -58,36 +58,27 @@ In `index.html` add:
 
 To launch, cd into your new directory and run `npx serve` or similar.
 
-> 👆 Note
+> 💡 Note
 >
 > For performance you may want to avoid loading Aspen from a cdn in production
 > environments. Instead, you can copy `src/aspen.js` into your own project
-> directly and serve it with your other files.
+> directly and serve it with your other files. This is called
+> [vendoring](https://htmx.org/essays/vendoring/).
 
 ## API reference
 
 ### createRoot
 
-```typescript
-// import * as app from "./app.js"
-// const root = createRoot(document.getElementById("root"), app)
-// root.render(html`<RootComponent />`)
-function createRoot(
-  element: HTMLElement,
-  components: Record<string, unknown>,
-): {
-  render: (taggedTemplateResult: Record<string, unknown>) => void;
-};
-```
+`createRoot(domElement, components)`
 
 The `createRoot` function accepts a dom element and a star import of the file
-where the component(s) you want to render at the root live, and it returns an
-object with a method called `render` that you can use to mount your
-application.
+where the component(s) you want to render at your application root are defined,
+and it returns an object with a method called `render` that you can use to
+mount your application.
 
-The `render` method accepts a tagged template literal created with the [`html`
-function](#html) and renders the specified markup inside the dom element passed
-to `createRoot`, replacing its contents.
+The `render` method accepts an [html tagged template literal](#html) and
+renders the specified markup inside the dom element passed to `createRoot`,
+replacing its contents.
 
 ```javascript
 import { createRoot, html } from "aspen";
@@ -115,102 +106,70 @@ root.render(html`
 
 ### html
 
-```typescript
-// html`<div>hello world</div>`
-function html(
-  strings: TemplateStringsArray,
-  ...interpolations: unknown[]
-): Record<string, unknown>;
+``html`...` ``, ``html(key)`...` ``, or ``html({ key })`...` ``
 
-// html`
-//   ${posts.map((post) =>
-//     html(post.id)`<div>${post.text}</div>`
-//   )}
-// `
-function html(
-  key: string | number | symbol,
-): (
-  strings: TemplateStringsArray,
-  ...interpolations: unknown[]
-) => Record<string, unknown>;
-
-// html`
-//   ${posts.map((post) =>
-//     html({ key: post.id })`<div>${post.text}</div>`
-//   )}
-// `
-function html(options: {
-  key: string | number | symbol;
-}): (
-  strings: TemplateStringsArray,
-  ...interpolations: unknown[]
-) => Record<string, unknown>;
-```
-
-The `html` function allows you to specify markup with [tagged template
-literals](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals#tagged_templates)
-using a syntax similar to JSX.
+The `html` function allows you to specify markup with [tagged
+templates](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals#tagged_templates)
+using a syntax similar to JSX. Usually tagged templates are used
+in [component](#components) return statements.
 
 ```javascript
-html`<div>hello world</div>`;
+export function Greeting() {
+  return html`<div>hello world</div>`;
+}
 ```
 
-However, unlike with JSX, the string parts of a tagged template literal are
+However, unlike JSX, the string parts of tagged templates are
 just strings, so html attribute names are used, not JavaScript property names,
 and camel casing is optional.
 
 ```javascript
-html`
-  <button formnovalidate class="primary" onClick=${() => submitForm()}>
-    ${submitting ? "Saving..." : "Submit"}
-  </button>
-`;
-```
-
-Another difference from JSX is that templates can specify multiple elements at
-the top level, without the need for a containing element or fragment.
-
-```javascript
-html`
-  <div>Please fill out the form and click "Submit"</div>
-  <button>Submit</button>
-`;
-```
-
-Templates can be assigned to variables.
-
-```javascript
-const labelElement = html`<label for=${htmlFor}>${label}</label>`;
-```
-
-Templates can also be exported.
-
-> 👆 Note
->
-> An exported templates that is not defined inside a component may only contain
-> html elements, it can't reference components.
-
-```javascript
-export const submitBttn = html`
-  <button class="primary" type="submit">Submit</button>
-`;
-```
-
-Usually templates will be used in [component](#components) return statements.
-
-```javascript
-export function SubmitBttn({ submitting, handleSubmit }) {
+export function SubmitButton({ submitForm }) {
+  // Html attributes are case-insensitive, so both formnovalidate and onClick
+  // are valid
   return html`
-    <button onclick=${handleSubmit}>
+    <button formnovalidate class="primary" onClick=${() => submitForm()}>
       ${submitting ? "Saving..." : "Submit"}
     </button>
   `;
 }
 ```
 
-Using tagged template literals this way has a couple of interesting benefits:
+Another difference from JSX is that tagged templates can specify multiple
+elements at the top level without the need for a containing element or
+fragment.
 
-1. Your entire app is just JavaScript, so no build or compile step is necessary.
+```javascript
+export function SubmitButton() {
+  return html`
+    <div>Please fill out the form and click "Submit"</div>
+    <button>Submit</button>
+  `;
+}
+```
+
+Tagged templates can be assigned to variables.
+
+```javascript
+const labelElement = html`<label for=${htmlFor}>${label}</label>`;
+```
+
+Tagged templates can also be exported.
+
+> 💡 Note
+>
+> An exported tagged template that is not defined inside a component may only
+> contain html elements, it can't reference components.
+
+```javascript
+export const submitButton = html`
+  <button class="primary" type="submit">Submit</button>
+`;
+```
+
+Using tagged templates this way has a couple interesting benefits:
+
+1. Your entire app is just JavaScript, so there's no build step.
 2. Markup is made up of strings and expressions, so Aspen can tell what
    changed between renders without any complicated dom diffing logic.
 
@@ -223,7 +182,7 @@ an attribute to be dynamic, you still need to use an expression for the whole
 value.
 
 ```javascript
-export function SubmitBttn({ submitting }) {
+export function SubmitButton({ submitting }) {
   return html`
     <button class=${`button primary ${submitting ? "subdued" : ""}`}>
       Submit
@@ -234,8 +193,8 @@ export function SubmitBttn({ submitting }) {
 
 ##### Event listeners
 
-You can attach a listener by setting the event attribute to a function. The
-first argument will be the event that triggered the listener.
+You can attach a listener by setting the attribute corresponding to the event
+name to a function. The first argument is the event.
 
 ```javascript
 export function ClickMe() {
@@ -253,22 +212,24 @@ export function ClickMe() {
 
 #### Nesting templates
 
-Templates can be nested in other templates.
+Tagged templates can be nested in other tagged templates.
 
 ```javascript
 export function FormFooter({ hasErrors }) {
   return html`
     <div class="form-footer">
-      ${hasErrors ? "Please fix the errors and resubmit" : undefined}
+      ${hasErrors
+        ? html`<span class="error">Please fix the errors and resubmit</span>`
+        : undefined}
       <button>Submit</button>
     </div>
   `;
 }
 ```
 
-An array of templates can be nested, but each template in the array must be
-passed a special key arg. Keys must be unique within an array as Aspen uses
-them to tell when items have been added, or removed, or have changed positions.
+An array of tagged templates can be nested, but each tagged template in the
+array must be passed a key arg. Keys have to be unique within an array as Aspen
+uses them to tell when items have been added, removed, or reordered.
 
 ```javascript
 const flavors = ["chocolate", "vanilla", "strawberry"];
@@ -288,13 +249,19 @@ export function Flavors() {
 }
 ```
 
+> 💡 Note
+>
+> To provide a key you call `html` like a regular function, passing the key as
+> an argument, and tag a template with the return value: ``html(key)`...` `` or
+> ``html({ key: yourKey })`...` ``.
+
 Resource ids make good keys.
 
 ```javascript
 export function Comments({ comments }) {
   return html`
     ${comments.map(
-      (comment) => html(comment.id)`
+      (comment) => html({ key: comment.id })`
         <div>${comment.text}</div>
       `,
     )}
@@ -303,31 +270,45 @@ export function Comments({ comments }) {
 ```
 
 Symbols are also allowed as keys, which can be useful for representing locally
-created items that haven't been saved to the server yet and so don't have an
-id.
+created items that haven't been saved to the server and don't have a
+permanent id yet.
 
 ```javascript
-const todos = [
-  { id: Symbol(), text: "asdf" },
-  { id: Symbol(), text: "asdf" },
-];
-
 export function Todos() {
+  const $todos = signal([
+    { id: Symbol(), text: "Learn aspen" },
+    { id: Symbol(), text: "See more $" },
+  ]);
+
+  // send todos to the server
+  task(() => {
+    // ...
+  });
+
   return html`
+    Todos:
     <ol>
-      ${todos.map(
+      ${$todos.val.map(
         (todo) => html(todo.id)`
-          <li>${todo.text}</li>
+          <li>
+            <input 
+              value=${todo.text} 
+              oninput=${(e) => (todo.text = e.target.value)} 
+            />
+          </li>
         `,
       )}
     </ol>
+    <button onclick=${() => $todos.val.push({ id: Symbol(), text: "" })}>
+      Add todo
+    </button>
   `;
 }
 ```
 
 #### Components
 
-To define a component, export a function that returns an html template.
+Components are defined by exporting a function that returns a tagged template.
 Components can also return primitive values, but only strings and numbers will
 be rendered.
 
@@ -343,12 +324,12 @@ export const Greeting () => "Hi there"
 
 A component cannot be the default export of the file where it is defined and it
 must have a non-empty `.name` property (named functions, arrow functions if
-declared with `const myVar = () => {...}`, etc.).
+declared with `const MyComponent = () => {...}`, etc.).
 
 ##### Composing components
 
 To compose components defined in the same file, you simply reference them in
-your templates like you would in JSX.
+your tagged templates like you would in JSX.
 
 ```javascript
 export function MyComponent() {
@@ -363,7 +344,7 @@ export function MyOtherComponent() {
 }
 ```
 
-###### Props
+##### Props
 
 The syntax for passing props to components is like the syntax for setting
 attribute values on elements.
@@ -381,8 +362,8 @@ export function Greeting({ message }) {
 }
 ```
 
-The `children` prop is special and represents any child nodes passed to the
-component.
+The `children` prop is special and represents any child elements passed to the
+component between its opening and closing tags in the markup.
 
 ```javascript
 export function MyComponent() {
@@ -410,12 +391,29 @@ export function MyComponent() {
 To use a component defined in a different file, you have to use a named star
 export to re-export the entire contents of that file, using the name of the
 component as the name of the export. You can then reference the component in
-templates.
+tagged templates.
 
 ```javascript
+// my-app.js
 export * as Greeting from "./greeting.js";
 
 export function App() {
   return html`<Greeting message="hello world" />`;
 }
 ```
+
+```javascript
+// greeting.js
+
+export function Greeting({ message }) {
+  return html`<div>${message}</div>`;
+}
+```
+
+> 💡 Note
+>
+> This syntax is a little odd, but it's only a few more characters than an
+> import and it means that Aspen has enough information at runtime to associate
+> a component function with a component reference in a tagged template, without
+> having to interpolate function calls into the markup. This makes for cleaner
+> markup and a more efficient rendering model.

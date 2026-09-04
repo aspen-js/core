@@ -3,8 +3,8 @@
 Aspen is a lightweight no-build framework that should feel familiar if you know
 React. Besides being no-build, a few distinctives of Aspen are that state is
 set and read by mutating deeply reactive signal objects and accessing their
-properties, tagged template literals are used for markup, and there is no
-virtual dom.
+properties, tagged templates are used for markup, and there is no virtual
+dom.
 
 > ⚠️ Warning
 >
@@ -58,7 +58,7 @@ In `index.html` add:
 
 To launch, cd into your new directory and run `npx serve` or similar.
 
-> 💡 Note
+> 💡 Info
 >
 > For performance you may want to avoid loading Aspen from a cdn in production
 > environments. Instead, you can copy `src/aspen.js` into your own project
@@ -72,7 +72,7 @@ To launch, cd into your new directory and run `npx serve` or similar.
 `createRoot(domElement, components)`
 
 The `createRoot` function accepts a dom element and a star import of the file
-where the component(s) you want to render at your application root are defined,
+where the component(s) you want to render at the application root are defined,
 and it returns an object with a method called `render` that you can use to
 mount your application.
 
@@ -110,8 +110,8 @@ root.render(html`
 
 The `html` function allows you to specify markup with [tagged
 templates](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals#tagged_templates)
-using a syntax similar to JSX. Usually tagged templates are used
-in [component](#components) return statements.
+using syntax similar to JSX. Usually tagged templates are used in
+[component](#components) return statements.
 
 ```javascript
 export function Greeting() {
@@ -124,11 +124,11 @@ just strings, so html attribute names are used, not JavaScript property names,
 and camel casing is optional.
 
 ```javascript
-export function SubmitButton({ submitForm }) {
+export function SubmitButton({ submit, submitting }) {
   // Html attributes are case-insensitive, so both formnovalidate and onClick
   // are valid
   return html`
-    <button formnovalidate class="primary" onClick=${() => submitForm()}>
+    <button formnovalidate class="primary" onClick=${() => submit()}>
       ${submitting ? "Saving..." : "Submit"}
     </button>
   `;
@@ -156,7 +156,7 @@ const labelElement = html`<label for=${htmlFor}>${label}</label>`;
 
 Tagged templates can also be exported.
 
-> 💡 Note
+> 👆 Note
 >
 > An exported tagged template that is not defined inside a component may only
 > contain html elements, it can't reference components.
@@ -239,7 +239,7 @@ export function Flavors() {
     <ul class="flavors-card">
       ${flavors.map(
         (flavor) =>
-          // here flavor is used as the key
+          // Here flavor is used as the key
           html(flavor)`
             <li>${flavor}</li>
           `,
@@ -249,7 +249,7 @@ export function Flavors() {
 }
 ```
 
-> 💡 Note
+> 👆 Note
 >
 > To provide a key you call `html` like a regular function, passing the key as
 > an argument, and tag a template with the return value: ``html(key)`...` `` or
@@ -280,7 +280,7 @@ export function Todos() {
     { id: Symbol(), text: "See more $" },
   ]);
 
-  // send todos to the server
+  // Send todos to the server
   task(() => {
     // ...
   });
@@ -344,7 +344,7 @@ export function MyOtherComponent() {
 }
 ```
 
-##### Props
+###### Props
 
 The syntax for passing props to components is like the syntax for setting
 attribute values on elements.
@@ -410,10 +410,104 @@ export function Greeting({ message }) {
 }
 ```
 
-> 💡 Note
+> 💡 Info
 >
-> This syntax is a little odd, but it's only a few more characters than an
-> import and it means that Aspen has enough information at runtime to associate
-> a component function with a component reference in a tagged template, without
-> having to interpolate function calls into the markup. This makes for cleaner
-> markup and a more efficient rendering model.
+> While a little odd, this syntax is only a few more characters than a regular
+> import. It means that Aspen has enough information at runtime to associate a
+> component function with a component reference in a tagged template, without
+> having to interpolate function calls into the markup. This makes for
+> cleaner markup and a more efficient rendering model.
+
+### Hooks
+
+In Aspen hooks allow you to hook into the _application_ life cycle, not just
+the _component_ life cycle. Not only can you call hooks within a component like
+this:
+
+```javascript
+export function Counter() {
+  const $count = signal(0);
+
+  return html`<button onclick${() => $count.val++}>${$count}</button>`;
+}
+```
+
+You can also call most hooks outside components.
+
+```javascript
+const $count = signal(0);
+
+export const Counter = () =>
+  html`<button onclick${() => $count.val++}>${$count}</button>`;
+```
+
+It's also valid to export hook calls.
+
+```javascript
+// count.js
+
+export const $count = signal(0);
+```
+
+```javascript
+// components/counter.js
+
+import { $count } from "../count.js";
+
+export const Counter = () =>
+  html`<button onclick${() => $count.val++}>${$count}</button>`;
+```
+
+#### signal
+
+`signal(initialValue)`
+
+The `signal` function accepts an initial value and returns a reactive signal
+object with a `.val` property that represents the current value.
+
+```javascript
+export function Greeting() {
+  const $greeting = signal("hello world");
+
+  // Renders "hello world"
+  return html`<div>${$greeting.val}</div>`;
+}
+```
+
+> 👆 Note
+>
+> By convention, signal variable names are prefixed with $ so that you can tell
+> at a glance whether a particular variable is a reactive signal object or just
+> a variable.
+
+Accessing properties on a signal object from within a component subscribes the
+component to the signal's state. When the signal changes, the component will
+rerender.
+
+To update the signal and trigger a render, simply mutate the signal object.
+
+```javascript
+const greetings = ["what's up?", "hola", "hi there"];
+
+export function Greeting() {
+  const $greeting = signal("hello world");
+
+  // Renders "hello world" initially, and then a random greeting whenever the
+  // button is clicked
+  return html`
+    <div>${$greeting.val}</div>
+    <button
+      onclick=${() => {
+        $greeting.val = greetings[Math.floor(Math.random() * greetings.length)];
+      }}
+    >
+      Random greeting
+    </button>
+  `;
+}
+```
+
+Signal updates only trigger component renders if the value accessed by the
+component changed in a meaningful way. In the above example, sometimes the same
+random greeting will be chose multiple times in a row. In that case the
+component won't actually rerender.

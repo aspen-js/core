@@ -1467,8 +1467,8 @@ function doRenderCycle(signalId, path) {
     // }
 
     for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
-      console.log("checking path", pathToCheck);
       if (pathToCheck.startsWith(path)) {
+        console.log("checking path", pathToCheck);
         const value = peek(signals.get(signalId).rawValue, pathToCheck);
         console.log("value:", value);
 
@@ -1791,7 +1791,7 @@ class ProxyHandler {
               slice: { start: args[0], end: args[1] },
             });
             // DEV: hmm
-            target[prop](...args);
+            return target[prop](...args);
           };
         } else {
           return (...args) => {
@@ -1799,7 +1799,7 @@ class ProxyHandler {
               enumerated: true,
             });
             // DEV: hmm
-            target[prop](...args);
+            return target[prop](...args);
           };
         }
       }

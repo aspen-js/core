@@ -1383,6 +1383,8 @@ type Subscription = {
 // DEV: do you even need the enumerated key symbol?
 // - don't think so
 
+const subscriptionsByKey = {};
+
 function createSubscription(signalId, path, options) {
   const { key, type } = renderStack.at(-1) || {};
 
@@ -1433,9 +1435,91 @@ function createSubscription(signalId, path, options) {
   }
 
   // TODO: Not efficient data structures
-  subscribersByKey[key] ||= {};
-  subscribersByKey[key][signalId] ||= {};
-  subscribersByKey[key][signalId][path] = subscription;
+  subscriptionsByKey[key] ||= {};
+  subscriptionsByKey[key][signalId] ||= {};
+  subscriptionsByKey[key][signalId][path] = subscription;
+}
+
+// DEV: naming?
+function doRenderCycle(signalId, path) {
+  const plannedUpdatesByKey = {};
+
+  [
+    ...Object.getOwnPropertySymbols(subscriptionsByKey),
+    ...Object.keys(subscriptionsByKey),
+  ].forEach((key) => {
+    const subscriptions = subscriptionsByKey[key][signalId];
+
+    const pathsToCheck = Object.keys(subscriptions).filter((pathToCheck) =>
+      pathToCheck.startsWith(path),
+    );
+
+    if (!pathsToCheck.length) {
+      return;
+    }
+
+    // DEV: is this it?
+    for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
+      if (pathToCheck.startsWith(path)) {
+        const value = peek(signals.get(signalId).rawValue, path);
+
+        if (shouldUpdate(subscription, value)) {
+          plannedUpdatesByKey[key] = subscription.subscriber;
+
+          return;
+        }
+      }
+    }
+  });
+
+  plannedRenders += Object.values(plannedUpdatesByKey).filter(
+    (update) => update.type === "component",
+  ).length;
+
+  // Schedule tasks defined outside of components. See comment below for why
+  // tasks must be scheduled before components render
+  Object.getOwnPropertySymbols(plannedUpdatesByKey).forEach((key) =>
+    plannedUpdatesByKey[key].onUpdate(),
+  );
+
+  Object.entries(plannedUpdatesByKey)
+    .sort(([a], [b]) => {
+      const isATask = a.includes("#task");
+      const isBTask = b.includes("#task");
+
+      // TODO: Should sort by number of path segments instead
+      // of length
+
+      // Sort tasks first so that the deferredTasks array is taken care of when
+      // rendering completes
+      return isATask && !isBTask
+        ? -1
+        : !isATask && isBTask
+          ? 1
+          : // After tasks, sort shorter keys first so that parent components
+            // render before their children
+            a.length - b.length;
+    })
+    .forEach(([key, update]) => {
+      // One last check to make sure the key hasn't been cleaned up
+      if (enumeratedAccessByKey[key] || accessByKey[key]) {
+        update.onUpdate({ plannedRenders });
+      }
+
+      if (update.type === "component") {
+        plannedRenders--;
+      }
+    });
+
+  if (plannedRenders === 0) {
+    while (deferredTasks.length) {
+      deferredTasks.shift()();
+    }
+  }
+}
+
+function shouldUpdate(subscription, value) {
+  // DEV
 }
 
 // DEV: for a scenario like $myArray.val.slice(0, 3)
@@ -1443,7 +1527,7 @@ function createSubscription(signalId, path, options) {
 // - no, that's not right
 // - slice doesn't need to be an arg
 function new1_notifySubscribers(signalId, path, slice) {
-  // DEV:
+  // DEV
 }
 
 // DEV: you forgot about handling nested paths when an object is set

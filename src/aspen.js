@@ -1766,15 +1766,38 @@ class ProxyHandler {
       proxied = value;
     }
 
-    if (renderStack.length) {
-      if (
-        Array.isArray(target) &&
-        (typeof value === "function" || prop === "length")
-      ) {
-        subscribe(this.#signalId, this.#path);
+    if (
+      Array.isArray(target) &&
+      (typeof value === "function" || prop === "length")
+    ) {
+      // subscribe(this.#signalId, this.#path);
+      if (prop === "length") {
+        createSubscription(this.#signalId, this.#path, { enumerated: true });
       } else {
-        subscribe(this.#signalId, this.#path, prop);
+        createSubscription(this.#signalId, this.#path + "." + prop);
+        // DEV: can this be less convoluted?
+        if (prop === "slice") {
+          return (...args) => {
+            createSubscription(this.#signalId, this.#path, {
+              enumerated: true,
+              slice: { start: args[0], end: args[1] },
+            });
+            // DEV: hmm
+            target[prop](...args);
+          };
+        } else {
+          return (...args) => {
+            createSubscription(this.#signalId, this.#path, {
+              enumerated: true,
+            });
+            // DEV: hmm
+            target[prop](...args);
+          };
+        }
       }
+    } else {
+      createSubscription(this.#signalId, this.#path + "." + prop);
+      // subscribe(this.#signalId, this.#path, prop);
     }
 
     if (
@@ -1797,7 +1820,8 @@ class ProxyHandler {
         // subscribers know about them when the method is complete
         const result = target[prop](...args);
 
-        notifySubscribers(this.#signalId, this.#path);
+        // notifySubscribers(this.#signalId, this.#path);
+        doRenderCycle(this.#signalId, this.#path);
 
         return result;
       };
@@ -1806,14 +1830,18 @@ class ProxyHandler {
     return proxied;
   }
 
+  // DEV: this could be more specific
+  // - kind of the equivalent of slicing an array
   has(target, prop, receiver) {
-    subscribe(this.#signalId, this.#path);
+    // subscribe(this.#signalId, this.#path);
+    createSubscription(this.#signalId, this.#path, { enumerated: true });
 
     return Reflect.has(target, prop, receiver);
   }
 
   ownKeys(target) {
-    subscribe(this.#signalId, this.#path);
+    // subscribe(this.#signalId, this.#path);
+    createSubscription(this.#signalId, this.#path, { enumerated: true });
 
     return Reflect.ownKeys(target);
   }
@@ -1829,16 +1857,23 @@ class ProxyHandler {
 
     Reflect.set(target, prop, value, receiver);
 
-    notifySubscribers(this.#signalId, this.#path, prop, value);
+    // notifySubscribers(this.#signalId, this.#path, prop, value);
+
+    // DEV: correct to not include prop here?
+    doRenderCycle(this.#signalId, this.#path);
 
     return true;
   }
+
+  // DEV: this could also be more specific
 
   // TODO: Notify non-enumerated subs
   deleteProperty(target, prop) {
     Reflect.deleteProperty(target, prop, receiver);
 
-    notifySubscribers(this.#signalId, this.#path);
+    doRenderCycle(this.#signalId, this.#path);
+
+    // notifySubscribers(this.#signalId, this.#path);
 
     return true;
   }

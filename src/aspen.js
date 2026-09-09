@@ -800,6 +800,7 @@ function cleanup(key) {
   clearNested(key, hookInitsByKey);
   clearNested(key, componentsByKey);
   clearNested(key, accessByKey);
+  clearNested(key, subscriptionsByKey);
   clearNested(key, enumeratedAccessByKey);
   clearNested(key, taskCallbacksByKey);
 }
@@ -812,6 +813,7 @@ function cleanupChildren(key) {
   clearNested(key, hookInitsByKey, false);
   clearNested(key, componentsByKey, false);
   clearNested(key, accessByKey, false);
+  clearNested(key, subscriptionsByKey, false);
   clearNested(key, enumeratedAccessByKey, false);
   clearNested(key, taskCallbacksByKey, false);
 }
@@ -1387,6 +1389,7 @@ const subscriptionsByKey = {};
 
 // DEV: handle instanceof (you'll need a proxy trap for Symbol.hasInstance)
 function createSubscription(signalId, path, options) {
+  console.log("createSubscription called...");
   const { key, type } = renderStack.at(-1) || {};
 
   if (!key || type === "peek") {
@@ -1443,7 +1446,10 @@ function createSubscription(signalId, path, options) {
 }
 
 // DEV: naming?
+
 function doRenderCycle(signalId, path) {
+  console.log("doRenderCycle called...");
+
   const plannedUpdatesByKey = {};
 
   [
@@ -1452,20 +1458,22 @@ function doRenderCycle(signalId, path) {
   ].forEach((key) => {
     const subscriptions = subscriptionsByKey[key][signalId];
 
-    const pathsToCheck = Object.keys(subscriptions).filter((pathToCheck) =>
-      pathToCheck.startsWith(path),
-    );
+    // const pathsToCheck = Object.keys(subscriptions).filter((pathToCheck) =>
+    //   pathToCheck.startsWith(path),
+    // );
+    //
+    // if (!pathsToCheck.length) {
+    //   return;
+    // }
 
-    if (!pathsToCheck.length) {
-      return;
-    }
-
-    // DEV: is this it?
     for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
+      console.log("checking path", pathToCheck);
       if (pathToCheck.startsWith(path)) {
-        const value = peek(signals.get(signalId).rawValue, path);
+        const value = peek(signals.get(signalId).rawValue, pathToCheck);
+        console.log("value:", value);
 
         if (shouldUpdate(subscription, value)) {
+          console.log("updating...");
           plannedUpdatesByKey[key] = subscription.subscriber;
 
           return;
@@ -1504,7 +1512,7 @@ function doRenderCycle(signalId, path) {
     })
     .forEach(([key, update]) => {
       // One last check to make sure the key hasn't been cleaned up
-      if (enumeratedAccessByKey[key] || accessByKey[key]) {
+      if (subscriptionsByKey[key]) {
         update.onUpdate({ plannedRenders });
       }
 

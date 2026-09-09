@@ -1385,6 +1385,7 @@ type Subscription = {
 
 const subscriptionsByKey = {};
 
+// DEV: handle instanceof (you'll need a proxy trap for Symbol.hasInstance)
 function createSubscription(signalId, path, options) {
   const { key, type } = renderStack.at(-1) || {};
 
@@ -1431,7 +1432,6 @@ function createSubscription(signalId, path, options) {
         subscriber: renderStack.at(-1),
         type: "isObject",
         value: true,
-        objectType: typeof value,
       };
     }
   }
@@ -1523,7 +1523,7 @@ function doRenderCycle(signalId, path) {
 function shouldUpdate(subscription, value) {
   switch (subscription.type) {
     case "equality":
-      return value !== subscription.value;
+      return subscription.value !== value;
     case "length":
       return (
         !Array.isArray(value) ||
@@ -1533,12 +1533,16 @@ function shouldUpdate(subscription, value) {
           : subscription.value !== value.length)
       );
     case "isArray":
-      return !Array.isArray(subscription.value);
+      return !Array.isArray(value);
     case "size":
       return (
-        !isPlainObject(subscription.value) ||
-        subscription.value !== Object.keys(value)
+        !isPlainObject(value) ||
+        subscription.value !== Object.keys(value).length
       );
+    case "isObject":
+      return !isPlainObject(value);
+    default:
+      throw Error("[Aspen] Unknown subscription type");
   }
 }
 

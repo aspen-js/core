@@ -1774,6 +1774,8 @@ class ProxyHandler {
       proxied = value;
     }
 
+    // DEV: the array method logic is spread out and should be consolidated
+    // - here and below
     if (
       Array.isArray(target) &&
       (typeof value === "function" || prop === "length")
@@ -1785,7 +1787,7 @@ class ProxyHandler {
         createSubscription(this.#signalId, this.#path + "." + prop);
         // DEV: can this be less convoluted?
         if (prop === "slice") {
-          return (...args) => {
+          proxied = (...args) => {
             createSubscription(this.#signalId, this.#path, {
               enumerated: true,
               slice: { start: args[0], end: args[1] },
@@ -1794,7 +1796,7 @@ class ProxyHandler {
             return target[prop](...args);
           };
         } else {
-          return (...args) => {
+          proxied = (...args) => {
             createSubscription(this.#signalId, this.#path, {
               enumerated: true,
             });
@@ -1826,7 +1828,7 @@ class ProxyHandler {
         // method but accessed elsewhere via arr[n], you'll need to track the
         // mutations that occur during method execution, and then let
         // subscribers know about them when the method is complete
-        const result = target[prop](...args);
+        const result = proxied(...args);
 
         // notifySubscribers(this.#signalId, this.#path);
         doRenderCycle(this.#signalId, this.#path);
@@ -1868,6 +1870,10 @@ class ProxyHandler {
     // notifySubscribers(this.#signalId, this.#path, prop, value);
 
     // DEV: correct to not include prop here?
+
+    // DEV: does it make sense to tighten this up a bit?
+    // - don't need to check enumerated access on the parent object if we're
+    // setting a property that already existed in the object
     doRenderCycle(this.#signalId, this.#path);
 
     return true;

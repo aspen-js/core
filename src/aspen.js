@@ -1412,9 +1412,10 @@ function createSubscription(signalId, path, options) {
         slice: options.slice,
       };
     } else {
+      // DEV: for array and objectExistence you'll have to check type
       subscription = {
         subscriber: renderStack.at(-1),
-        type: "existence",
+        type: "isArray",
         value: true,
       };
     }
@@ -1428,8 +1429,9 @@ function createSubscription(signalId, path, options) {
     } else {
       subscription = {
         subscriber: renderStack.at(-1),
-        type: "existence",
+        type: "isObject",
         value: true,
+        objectType: typeof value,
       };
     }
   }
@@ -1519,7 +1521,25 @@ function doRenderCycle(signalId, path) {
 }
 
 function shouldUpdate(subscription, value) {
-  // DEV
+  switch (subscription.type) {
+    case "equality":
+      return value !== subscription.value;
+    case "length":
+      return (
+        !Array.isArray(value) ||
+        (subscription.slice
+          ? subscription.value !==
+            value.slice(subscription.slice.start, subscription.slice.end).length
+          : subscription.value !== value.length)
+      );
+    case "isArray":
+      return !Array.isArray(subscription.value);
+    case "size":
+      return (
+        !isPlainObject(subscription.value) ||
+        subscription.value !== Object.keys(value)
+      );
+  }
 }
 
 // DEV: for a scenario like $myArray.val.slice(0, 3)

@@ -16,11 +16,11 @@ export function Counter() {
   `;
 }
 
-const $count = signal(0);
-
-task(() => {
-  console.log("the global count is ", $count.val);
-});
+// const $count = signal(0);
+//
+// task(() => {
+//   console.log("the global count is ", $count.val);
+// });
 
 export function CounterWithTask() {
   console.log("[CounterWithTask] rendering");
@@ -33,6 +33,21 @@ export function CounterWithTask() {
 
   return html`
     <button onclick=${() => $count.val++}>count: ${$count.val}</button>
+  `;
+}
+
+export function DoubleCounter() {
+  const $count = signal(0);
+
+  task(() => {
+    console.log("RUNNING EFFECT");
+    $count.val++;
+  });
+
+  return html`
+    <div>count: ${$count.val}</div>
+    <button onclick=${() => $count.val++}>↑</button>
+    <button onclick=${() => $count.val--}>↓</button>
   `;
 }
 

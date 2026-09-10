@@ -1276,74 +1276,6 @@ function shouldDoDeepUpdate(prevValue, currentValue) {
 
 let plannedRenders = 0;
 
-// DEV
-// - "enumerated access" should only apply to access that enumerates every
-// single item in a list
-//   - in this case subscribers should only be notified if the list length
-//   changes
-//   - the signal prop resolution logic should prevent child components from
-//   seeing stale values
-//   - probably can treat access to length in a similar way?
-//   - push, pop, splice if it changes length, delete, setting an object,
-//   property that wasn't present before should trigger subscribers
-// - handle primitive values how you currently are
-//   - is it really that simple?
-//   - might actually be that simple
-//   - can you impliment this today?
-//   - object truthiness counts as a primitive
-// - enumerating object methods:
-//   - has trap, ownKeys trap
-// - enumerating array methods
-//   - all non-mutating array methods
-//     - splice and toSpliced are special in that they should only be notified
-//     if the length of their return value changes
-//     - actually, this should be true of all enumerated access
-//   - for the initial implementation, you can probably treat all array methods
-//   as enumerating
-
-const subscribersByKey = {};
-
-// DEV: explain
-const ENUMERATED_KEYS = Symbol();
-// const SLICE = Symbol();
-
-// DEV: probably safe to assume that subscribe will always be called before
-// notify?
-
-// DEV: this seems like a good place for a WeakSet?
-
-// DEV: path, property, args?
-
-function new_subscribe(signalId, path, property, slice) {
-  const { key, type } = renderStack.at(-1) || {};
-
-  if (!key || type === "peek") {
-    return;
-  }
-
-  const target = peek(signals.get(signalId).rawValue, path);
-  const value =
-    property === ENUMERATED_KEYS
-      ? slice
-        ? target.slice(slice.start, slice.end).length
-        : Object.keys(target).length
-      : target[property];
-
-  if (isPrimitive(value)) {
-    subscribersByKey[key] ||= { subscriptions: {} };
-    subscribersByKey[key].subscriber = renderStack.at(-1);
-    subscribersByKey[key].subscriptions[signalId] ||= {};
-    subscribersByKey[key].subscriptions[signalId][path] ||= {};
-    subscribersByKey[key].subscriptions[signalId][path][property] = slice
-      ? { value, slice }
-      : { value };
-  } else {
-    // DEV: need to create subscriptions for truthiness changes
-  }
-}
-
-// DEV: access should be tracked by object key and be reset before each render
-
 /**
  *
  * ACCESS
@@ -1362,28 +1294,6 @@ function new_subscribe(signalId, path, property, slice) {
  * - "" to a primitive (including null or undefined)
  *
  */
-
-// DEV: the path unreachable case might not be something you have to handle
-// separately from primitive vs non-primitive
-
-/*
-
-type Subscription = {
-  type: "primitive",
-  value: string | number | symbol | null | undefined
-} | {
-  type: "object",
-  size: number,
-} | {
-  type: "array",
-  length: number,
-  slice?: { start: number, end: number }
-}
-
- */
-
-// DEV: do you even need the enumerated key symbol?
-// - don't think so
 
 const subscriptionsByKey = {};
 
@@ -1416,7 +1326,6 @@ function createSubscription(signalId, path, options) {
         slice: options.slice,
       };
     } else {
-      // DEV: for array and objectExistence you'll have to check type
       subscription = {
         subscriber: renderStack.at(-1),
         type: "isArray",
@@ -1461,14 +1370,6 @@ function doRenderCycle(signalId, path) {
     if (!subscriptions) {
       return;
     }
-
-    // const pathsToCheck = Object.keys(subscriptions).filter((pathToCheck) =>
-    //   pathToCheck.startsWith(path),
-    // );
-    //
-    // if (!pathsToCheck.length) {
-    //   return;
-    // }
 
     for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
       if (pathToCheck.startsWith(path)) {
@@ -1556,84 +1457,6 @@ function shouldUpdate(subscription, value) {
     default:
       throw Error("[Aspen] Unknown subscription type");
   }
-}
-
-// DEV: for a scenario like $myArray.val.slice(0, 3)
-// - this should get called with $myArray[SignalIdProperty], [root].val, {start: 0, end: 3}
-// - no, that's not right
-// - slice doesn't need to be an arg
-function new1_notifySubscribers(signalId, path, slice) {
-  // DEV
-}
-
-// DEV: you forgot about handling nested paths when an object is set
-// - for better use of memory you should store prev values in one spot
-// - maybe don't worry about that for now
-
-// DEV: you want all the updates to happen in a single pass, so this might not
-// be quite right
-function new_notifySubscribers(signalId, path, property) {
-  const plannedUpdatesByKey = {};
-
-  // DEV: ENUMERATED_KEYS and .length (for arrays) should be treated the same
-
-  // DEV: if path is just a string, you should handle any enumerated ky
-  // subscriptions as well
-
-  // DEV: lots to explain here
-  [
-    ...Object.getOwnPropertySymbols(subscribersByKey),
-    ...Object.keys(subscribersByKey),
-  ].forEach((key) => {
-    if (key in plannedUpdatesByKey) {
-      return;
-    }
-
-    const target = peek(signals.get(signalId).rawValue, path);
-    const subscriptions =
-      subscribersByKey?.[key]?.subscriptions?.[signalId]?.[path];
-
-    // DEV: for each key this should just look at all the subscriptions where
-    // the subscription path starts with the target path + the property
-    // - in the case where target is an object you'll also need to run the
-    // check for ENUMERATED_KEYS on the target
-
-    if (!subscriptions) {
-      return;
-    }
-
-    // DEV: explain
-    if (
-      property !== ENUMERATED_KEYS &&
-      !Array.isArray(target) &&
-      subscriptions[ENUMERATED_KEYS]
-    ) {
-      const subscription = subscriptions[ENUMERATED_KEYS];
-
-      if (subscription.value !== Object.keys(target).length) {
-        plannedUpdatesByKey[key] = subscription.subscriber;
-      }
-
-      return;
-    }
-
-    const subscription = subscriptions?.[property];
-    if (subscription) {
-      const currentValue =
-        property === ENUMERATED_KEYS
-          ? subscription.slice
-            ? target.slice(subscription.slice.start, subscription.slice.end)
-                .length
-            : Object.keys(target).length
-          : target[property];
-
-      if (currentValue !== subscription.value) {
-        plannedUpdatesByKey[key] = subscription.subscriber;
-      }
-    }
-  });
-
-  // DEV: track planned renders, do the updates
 }
 
 function notifySubscribers(signalId, path, prop, value) {
@@ -1875,20 +1698,21 @@ class ProxyHandler {
 
     // DEV: correct to not include prop here?
 
-    // DEV: does it make sense to tighten this up a bit?
+    // DEV: figure out how to tighten this up
     // - don't need to check enumerated access on the parent object if we're
     // setting a property that already existed in the object
+    // - pretty sure this is also running a bunch of unnecessary checks for
+    // siblings
     doRenderCycle(this.#signalId, this.#path);
 
     return true;
   }
 
-  // DEV: this could also be more specific
-
   // TODO: Notify non-enumerated subs
   deleteProperty(target, prop) {
     Reflect.deleteProperty(target, prop, receiver);
 
+    // DEV: this could also be more specific?
     doRenderCycle(this.#signalId, this.#path);
 
     // notifySubscribers(this.#signalId, this.#path);
@@ -1956,6 +1780,13 @@ const taskCallbacksByKey = {};
 // directly and not via something.object?
 // - this might only matter for arrays?
 // - what about unattached objects?
+
+// DEV: The issue is that when a task run is skipped becuase the update came
+// from the task itself the task subscriptions in subscriptionsByKey hang on to
+// stale values
+// - a better data structure would make this unnecessary, but for now you can
+// just add a refresh subscriptions function
+// - this might come in handy when imiplementing computed
 
 // TODO: Allow returning a cleanup function
 export function task(callback) {

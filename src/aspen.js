@@ -51,7 +51,8 @@ function isPrimitive(value) {
     value === undefined ||
     typeof value === "string" ||
     typeof value === "boolean" ||
-    typeof value === "number"
+    typeof value === "number" ||
+    typeof value === "symbol"
   );
 }
 
@@ -1354,6 +1355,37 @@ function createSubscription(signalId, path, options) {
   subscriptionsByKey[key][signalId][path] = subscription;
 }
 
+// DEV: explain
+function refreshSubscriptions(key) {
+  const subscriptions = subscriptionsByKey[key];
+
+  if (!subscriptions) {
+    return;
+  }
+
+  const signalIds = Object.getOwnPropertySymbols(subscriptions);
+  signalIds.forEach((signalId) => {
+    Object.entries(subscriptions[signalId]).forEach(([path, subscription]) => {
+      const value = peek(signals.get(signalId).rawValue, path);
+
+      // DEV: don't love this
+      createSubscription(
+        signalId,
+        path,
+        isPrimitive(value)
+          ? undefined
+          : Array.isArray(value)
+            ? subscription.type === "length"
+              ? { enumerated: true, slice: subscription.slice }
+              : undefined
+            : subscription.type === "size"
+              ? { enumerated: true }
+              : undefined,
+      );
+    });
+  });
+}
+
 // DEV: naming?
 
 function doRenderCycle(signalId, path) {
@@ -1814,6 +1846,8 @@ export function task(callback) {
       key: taskKey,
       onUpdate: () => {
         if (renderStack.at(-1)?.key === taskKey) {
+          refreshSubscriptions(taskKey);
+
           // Prevent infinite recursion by doing nothing if the update happened
           // during the task itself
           return;

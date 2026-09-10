@@ -16,6 +16,26 @@ export function Counter() {
   `;
 }
 
+const $count = signal(0);
+
+task(() => {
+  console.log("the global count is ", $count.val);
+});
+
+export function CounterWithTask() {
+  console.log("[CounterWithTask] rendering");
+
+  const $count = signal(0);
+
+  task(() => {
+    console.log("the count is", $count.val);
+  });
+
+  return html`
+    <button onclick=${() => $count.val++}>count: ${$count.val}</button>
+  `;
+}
+
 export function Profile({ user }) {
   console.log("[Profile] rendering...");
 

@@ -111,6 +111,7 @@ __TEST__(
 
 const $count = signal(0);
 
+// DEV: for some reason this is really throwing things off?
 task(() => {
   console.log("The count is", $count.val);
 });
@@ -166,10 +167,14 @@ __TEST__(
     await button.click();
     await button.click();
 
+    console.log("ALL LOGS:", logs);
+
     const filtered = logs.filter(
       (log) =>
         log.startsWith("the count is") || log === "[CounterWithTask] rendering",
     );
+
+    console.log("FILTERED IS", filtered);
 
     expect(filtered.length).toBe(6);
 

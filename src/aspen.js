@@ -1458,6 +1458,10 @@ function doRenderCycle(signalId, path) {
   ].forEach((key) => {
     const subscriptions = subscriptionsByKey[key][signalId];
 
+    if (!subscriptions) {
+      return;
+    }
+
     // const pathsToCheck = Object.keys(subscriptions).filter((pathToCheck) =>
     //   pathToCheck.startsWith(path),
     // );
@@ -1993,8 +1997,10 @@ export function task(callback) {
       },
     });
 
-    delete accessByKey[taskKey];
-    delete enumeratedAccessByKey[taskKey];
+    // delete accessByKey[taskKey];
+    // delete enumeratedAccessByKey[taskKey];
+
+    delete subscriptionsByKey[taskKey];
 
     taskCallbacksByKey[taskKey]();
 

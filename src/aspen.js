@@ -1735,6 +1735,8 @@ class ProxyHandler {
     // setting a property that already existed in the object
     // - pretty sure this is also running a bunch of unnecessary checks for
     // siblings
+    // - you can just check a few lines up whether the object already has
+    //   this property
     doRenderCycle(this.#signalId, this.#path);
 
     return true;

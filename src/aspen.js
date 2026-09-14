@@ -1636,6 +1636,8 @@ class ProxyHandler {
       proxied = value;
     }
 
+    // DEV: let the early returns commence
+
     // DEV: the array method logic is spread out and should be consolidated
     // - here and below
     if (

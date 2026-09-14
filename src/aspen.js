@@ -1607,6 +1607,7 @@ class ProxyHandler {
     this.#path = path;
   }
 
+  // DEV: early returns might be your friend here
   get(target, prop, receiver) {
     if (prop === SignalIdProperty) {
       return this.#signalId;
@@ -1615,6 +1616,8 @@ class ProxyHandler {
     if (prop === PathProperty) {
       return this.#path;
     }
+
+    // DEV: the check for peek could happen up here
 
     let proxied;
     const value = Reflect.get(target, prop, receiver);
@@ -1724,6 +1727,12 @@ class ProxyHandler {
     const { prevValues } = signals.get(this.#signalId);
     prevValues[this.#path + "." + prop] = peek(target, prop);
 
+    // DEV: since this is all synchronous, pretty sure you could just have a
+    // global variable called "peeking"
+    renderStack.push({ type: "peek" });
+    const propertyExists = prop in target;
+    renderStack.pop();
+
     Reflect.set(target, prop, value, receiver);
 
     // notifySubscribers(this.#signalId, this.#path, prop, value);
@@ -1737,7 +1746,14 @@ class ProxyHandler {
     // siblings
     // - you can just check a few lines up whether the object already has
     //   this property
-    doRenderCycle(this.#signalId, this.#path);
+    doRenderCycle(
+      this.#signalId,
+      propertyExists
+        ? // If the proerty was already present in the object there's no need to notify
+          // subscribers listening for changes in object size at this.#path
+          this.#path + "." + prop
+        : this.#path,
+    );
 
     return true;
   }

@@ -126,3 +126,99 @@ export function DivOrSpanContainer({ as, children }) {
       ? html`<div>${wrapped}</div>`
       : wrapped;
 }
+
+export function Name({ $user }) {
+  console.log("[Name] rendering");
+
+  return html`
+    <input
+      placeholder="Name"
+      value=${$user.val.name}
+      oninput=${(e) => ($user.val.name = e.target.value)}
+    />
+  `;
+}
+
+export function Password({ $user }) {
+  console.log("[Password] rendering");
+
+  return html`
+    <input
+      placeholder="Password"
+      value=${$user.val.password}
+      oninput=${(e) => ($user.val.password = e.target.value)}
+    />
+  `;
+}
+
+export function Email({ $user }) {
+  console.log("[Email] rendering");
+
+  return html`<input
+    placeholder="Email"
+    type="email"
+    value=${$user.val.contact.email}
+    oninput=${(e) => ($user.val.contact.email = e.target.value)}
+  />`;
+}
+
+export function Phone({ $user }) {
+  console.log("[Phone] rendering");
+
+  return html`
+    <input
+      placeholder="Phone"
+      value=${$user.val.contact.phone}
+      oninput=${(e) => ($user.val.contact.phone = e.target.value)}
+    />
+  `;
+}
+
+export function UserCard() {
+  console.log("[UserCard] rendering");
+
+  const $saving = signal(false);
+  const $user = signal({
+    name: "",
+    password: "********",
+    contact: { email: "", phone: "" },
+  });
+
+  task(() => {
+    console.log("[task] user:", JSON.stringify($user.val, null, 2));
+  });
+
+  return html`
+    <div style="display: flex; flex-direction: column; width: 248px; gap: 12px">
+      <Name $user=${$user} />
+      <Password $user=${$user} />
+      <Email $user=${$user} />
+      <Phone $user=${$user} />
+      <div style="display: flex; flex-direction: row; gap: 12px;">
+        <button
+          style="flex: 1;"
+          onclick=${() => {
+            $user.val = {
+              name: "",
+              password: "********",
+              contact: { email: "", phone: "" },
+            };
+          }}
+        >
+          Reset
+        </button>
+        <button
+          style="flex: 1"
+          onclick=${() => {
+            if (!$saving.val) {
+              $saving.val = true;
+              setTimeout(() => ($saving.val = false), 450);
+            }
+          }}
+        >
+          ${$saving.val ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </div>
+  `;
+}

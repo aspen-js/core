@@ -1735,17 +1735,8 @@ class ProxyHandler {
 
     Reflect.set(target, prop, value, receiver);
 
-    // notifySubscribers(this.#signalId, this.#path, prop, value);
-
-    // DEV: correct to not include prop here?
-
-    // DEV: figure out how to tighten this up
-    // - don't need to check enumerated access on the parent object if we're
-    // setting a property that already existed in the object
-    // - pretty sure this is also running a bunch of unnecessary checks for
-    // siblings
-    // - you can just check a few lines up whether the object already has
-    //   this property
+    // DEV: this will still sometimes run unnecessary checks for siblings.
+    // Could probably fix this with an options arg
     doRenderCycle(
       this.#signalId,
       propertyExists

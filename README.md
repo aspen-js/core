@@ -420,15 +420,15 @@ export function Greeting({ message }) {
 
 ### Hooks
 
-In Aspen hooks allow you to hook into the _application_ life cycle, not just
-the _component_ life cycle. Not only can you call hooks within a component like
-this:
+In Aspen hooks are designed to let you hook into the application life cycle,
+not just the component life cycle. Not only can you call hooks within a
+component like this:
 
 ```javascript
 export function Counter() {
   const $count = signal(0);
 
-  return html`<button onclick${() => $count.val++}>${$count}</button>`;
+  return html`<button onclick${() => $count.val++}>${$count.val}</button>`;
 }
 ```
 
@@ -438,7 +438,7 @@ You can also call most hooks outside components.
 const $count = signal(0);
 
 export const Counter = () =>
-  html`<button onclick${() => $count.val++}>${$count}</button>`;
+  html`<button onclick${() => $count.val++}>${$count.val}</button>`;
 ```
 
 It's also valid to export hook calls.
@@ -455,7 +455,7 @@ export const $count = signal(0);
 import { $count } from "../count.js";
 
 export const Counter = () =>
-  html`<button onclick${() => $count.val++}>${$count}</button>`;
+  html`<button onclick${() => $count.val++}>${$count.val}</button>`;
 ```
 
 #### signal
@@ -509,5 +509,5 @@ export function Greeting() {
 
 Signal updates only trigger component renders if the value accessed by the
 component changed in a meaningful way. In the above example, sometimes the same
-random greeting will be chose multiple times in a row. In that case the
+random greeting will be chosen multiple times in a row. In that case the
 component won't actually rerender.

@@ -1617,7 +1617,7 @@ class ProxyHandler {
       return this.#path;
     }
 
-    // DEV: the check for peek could happen up here
+    // DEV: the check for peek could happen up here?
 
     let proxied;
     const value = Reflect.get(target, prop, receiver);
@@ -1726,6 +1726,7 @@ class ProxyHandler {
       return true;
     }
 
+    // DEV: this isn't used anymore?
     const { prevValues } = signals.get(this.#signalId);
     prevValues[this.#path + "." + prop] = peek(target, prop);
 

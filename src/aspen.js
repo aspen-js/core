@@ -1386,8 +1386,6 @@ function refreshSubscriptions(key) {
   });
 }
 
-// DEV: naming?
-
 function doRenderCycle(signalId, path) {
   console.log("doRenderCycle called...");
 
@@ -1618,6 +1616,7 @@ class ProxyHandler {
     }
 
     // DEV: the check for peek could happen up here?
+    // - no, you want it to return a fully functional signal object
 
     let proxied;
     const value = Reflect.get(target, prop, receiver);
@@ -1645,6 +1644,8 @@ class ProxyHandler {
       (typeof value === "function" || prop === "length")
     ) {
       // subscribe(this.#signalId, this.#path);
+
+      // DEV: For this case you can just use the normal prop logic?
       if (prop === "length") {
         createSubscription(this.#signalId, this.#path, { enumerated: true });
       } else {

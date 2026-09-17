@@ -1401,6 +1401,8 @@ function doRenderCycle(signalId, path) {
       return;
     }
 
+    console.log("paths:", Object.keys(subscriptions));
+
     for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
       if (pathToCheck.startsWith(path)) {
         console.log("checking path", pathToCheck);
@@ -1605,7 +1607,6 @@ class ProxyHandler {
     this.#path = path;
   }
 
-  // DEV: early returns might be your friend here
   get(target, prop, receiver) {
     if (prop === SignalIdProperty) {
       return this.#signalId;
@@ -1614,9 +1615,6 @@ class ProxyHandler {
     if (prop === PathProperty) {
       return this.#path;
     }
-
-    // DEV: the check for peek could happen up here?
-    // - no, you want it to return a fully functional signal object
 
     let proxied;
     const value = Reflect.get(target, prop, receiver);
@@ -1635,160 +1633,63 @@ class ProxyHandler {
       proxied = value;
     }
 
-    // DEV: let the early returns commence
+    createSubscription(this.#signalId, this.#path + "." + prop);
 
-    // // DEV: test that this works for the .length case as well
-    // createSubscription(this.#signalId, this.#path + "." + prop);
-    //
-    // if (
-    //   !Array.isArray(target) ||
-    //   typeof value !== "function" ||
-    //   typeof prop !== "string"
-    // ) {
-    //   return proxied;
-    // }
-    //
-    // console.log("prop", prop);
-    //
     // DEV: explain
-    //
+
+    // DEV: does this break down for arrays of functions?
+    // - will prop be a number when accessing by index?
+    // - you'd have to check for number like strings too
+    if (!Array.isArray(target) || typeof value !== "function") {
+      return proxied;
+    }
 
     // DEV: stuff is gettin weird
     // - why is reverse broken?
-    if (
-      Array.isArray(target) &&
-      // DEV: this could break down for an array of functions?
-      (typeof value === "function" || prop === "length")
-    ) {
-      return (...args) => {
-        debug("calling proxied", prop);
-        console.log("typeof value", typeof value);
-        console.log("args:", args);
-        console.log("value:", value);
+    return (...args) => {
+      debug("calling proxied", prop);
+      console.log("typeof value", typeof value);
+      console.log("args:", args);
+      console.log("value:", value);
 
-        // DEV: pretty sure this is taken care of now, but you should check
-        // - it could still be smarter, for instance if an item is pushed onto
-        // an array, only enumerated accessors need to be notified, but if
-        // unshift is used then every item accessor needs to be notified
+      // DEV: pretty sure this is taken care of now, but you should check
+      // - it could still be smarter, for instance if an item is pushed onto
+      // an array, only enumerated accessors need to be notified, but if
+      // unshift is used then every item accessor needs to be notified
 
-        // TODO: In order to handle the case where an array is mutated via
-        // method but accessed elsewhere via arr[n], you'll need to track the
-        // mutations that occur during method execution, and then let
-        // subscribers know about them when the method is complete
+      // TODO: In order to handle the case where an array is mutated via
+      // method but accessed elsewhere via arr[n], you'll need to track the
+      // mutations that occur during method execution, and then let
+      // subscribers know about them when the method is complete
 
-        // DEV: should peek?
-        // - or no need
-        // const result = target[prop](...args);
+      // DEV: explain why calling this way
+      const result = target[prop](...args);
 
-        // DEV: not sure this is necessary
-        const result = peek(signals.get(this.#signalId).rawValue, this.#path)[
-          prop
-        ](...args);
-
-        // console.log("thing:", thing);
-
-        if (
-          prop === "splice" ||
-          prop === "fill" ||
-          prop === "sort" ||
-          prop === "reverse" ||
-          prop === "shift" ||
-          prop === "unshift" ||
-          prop === "push" ||
-          prop === "pop"
-        ) {
-          // notifySubscribers(this.#signalId, this.#path);
-          doRenderCycle(this.#signalId, this.#path);
-
-          return result;
-        } else {
-          createSubscription(
-            this.#signalId,
-            this.#path,
-            prop === "slice"
-              ? { enumerated: true, slice: { start: args[0], end: args[1] } }
-              : { enumerated: true },
-          );
-        }
-
-        return result;
-      };
-    }
-
-    return proxied;
-    // DEV: copy up the comments here
-
-    // DEV: the array method logic is spread out and should be consolidated
-    // - here and below
-    if (
-      Array.isArray(target) &&
-      (typeof value === "function" || prop === "length")
-    ) {
-      // subscribe(this.#signalId, this.#path);
-
-      // DEV: For this case you can just use the normal prop logic?
-      if (prop === "length") {
-        createSubscription(this.#signalId, this.#path, { enumerated: true });
-      } else {
-        createSubscription(this.#signalId, this.#path + "." + prop);
-        // DEV: can this be less convoluted?
-        if (prop === "slice") {
-          proxied = (...args) => {
-            createSubscription(this.#signalId, this.#path, {
-              enumerated: true,
-              slice: { start: args[0], end: args[1] },
-            });
-            // DEV: hmm
-            return target[prop](...args);
-          };
-        } else {
-          proxied = (...args) => {
-            createSubscription(this.#signalId, this.#path, {
-              enumerated: true,
-            });
-            // DEV: hmm
-            return target[prop](...args);
-          };
-        }
-      }
-    } else {
-      createSubscription(this.#signalId, this.#path + "." + prop);
-      // subscribe(this.#signalId, this.#path, prop);
-    }
-
-    if (
-      Array.isArray(target) &&
-      (prop === "splice" ||
+      if (
+        prop === "splice" ||
         prop === "fill" ||
         prop === "sort" ||
         prop === "reverse" ||
         prop === "shift" ||
         prop === "unshift" ||
         prop === "push" ||
-        prop === "pop")
-    ) {
-      return (...args) => {
-        debug("calling proxied", prop);
-
-        // DEV: pretty sure this is taken care of now, but you should check
-        // - it could still be smarter, for instance if an item is pushed onto
-        // an array, only enumerated accessors need to be notified, but if
-        // unshift is used then every item accessor needs to be notified
-
-        // TODO: In order to handle the case where an array is mutated via
-        // method but accessed elsewhere via arr[n], you'll need to track the
-        // mutations that occur during method execution, and then let
-        // subscribers know about them when the method is complete
-        const result = proxied(...args);
-
-        // notifySubscribers(this.#signalId, this.#path);
+        prop === "pop"
+      ) {
         doRenderCycle(this.#signalId, this.#path);
 
         return result;
-      };
-    }
+      } else {
+        createSubscription(
+          this.#signalId,
+          this.#path,
+          prop === "slice"
+            ? { enumerated: true, slice: { start: args[0], end: args[1] } }
+            : { enumerated: true },
+        );
+      }
 
-    return proxied;
+      return result;
+    };
   }
 
   // DEV: this could be more specific

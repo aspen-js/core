@@ -1657,6 +1657,7 @@ class ProxyHandler {
     // - why is reverse broken?
     if (
       Array.isArray(target) &&
+      // DEV: this could break down for an array of functions?
       (typeof value === "function" || prop === "length")
     ) {
       return (...args) => {
@@ -1675,15 +1676,16 @@ class ProxyHandler {
         // mutations that occur during method execution, and then let
         // subscribers know about them when the method is complete
 
-        createSubscription(
-          this.#signalId,
-          this.#path,
-          prop === "slice"
-            ? { enumerated: true, slice: { start: args[0], end: args[1] } }
-            : { enumerated: true },
-        );
+        // DEV: should peek?
+        // - or no need
+        // const result = target[prop](...args);
 
-        const result = target[prop](...args);
+        // DEV: not sure this is necessary
+        const result = peek(signals.get(this.#signalId).rawValue, this.#path)[
+          prop
+        ](...args);
+
+        // console.log("thing:", thing);
 
         if (
           prop === "splice" ||
@@ -1699,6 +1701,14 @@ class ProxyHandler {
           doRenderCycle(this.#signalId, this.#path);
 
           return result;
+        } else {
+          createSubscription(
+            this.#signalId,
+            this.#path,
+            prop === "slice"
+              ? { enumerated: true, slice: { start: args[0], end: args[1] } }
+              : { enumerated: true },
+          );
         }
 
         return result;

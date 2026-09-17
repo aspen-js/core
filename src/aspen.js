@@ -1637,6 +1637,77 @@ class ProxyHandler {
 
     // DEV: let the early returns commence
 
+    // // DEV: test that this works for the .length case as well
+    // createSubscription(this.#signalId, this.#path + "." + prop);
+    //
+    // if (
+    //   !Array.isArray(target) ||
+    //   typeof value !== "function" ||
+    //   typeof prop !== "string"
+    // ) {
+    //   return proxied;
+    // }
+    //
+    // console.log("prop", prop);
+    //
+    // DEV: explain
+    //
+
+    // DEV: stuff is gettin weird
+    // - why is reverse broken?
+    if (
+      Array.isArray(target) &&
+      (typeof value === "function" || prop === "length")
+    ) {
+      return (...args) => {
+        debug("calling proxied", prop);
+        console.log("typeof value", typeof value);
+        console.log("args:", args);
+        console.log("value:", value);
+
+        // DEV: pretty sure this is taken care of now, but you should check
+        // - it could still be smarter, for instance if an item is pushed onto
+        // an array, only enumerated accessors need to be notified, but if
+        // unshift is used then every item accessor needs to be notified
+
+        // TODO: In order to handle the case where an array is mutated via
+        // method but accessed elsewhere via arr[n], you'll need to track the
+        // mutations that occur during method execution, and then let
+        // subscribers know about them when the method is complete
+
+        createSubscription(
+          this.#signalId,
+          this.#path,
+          prop === "slice"
+            ? { enumerated: true, slice: { start: args[0], end: args[1] } }
+            : { enumerated: true },
+        );
+
+        const result = target[prop](...args);
+
+        if (
+          prop === "splice" ||
+          prop === "fill" ||
+          prop === "sort" ||
+          prop === "reverse" ||
+          prop === "shift" ||
+          prop === "unshift" ||
+          prop === "push" ||
+          prop === "pop"
+        ) {
+          // notifySubscribers(this.#signalId, this.#path);
+          doRenderCycle(this.#signalId, this.#path);
+
+          return result;
+        }
+
+        return result;
+      };
+    }
+
+    return proxied;
+    // DEV: copy up the comments here
+
     // DEV: the array method logic is spread out and should be consolidated
     // - here and below
     if (
@@ -1688,6 +1759,11 @@ class ProxyHandler {
     ) {
       return (...args) => {
         debug("calling proxied", prop);
+
+        // DEV: pretty sure this is taken care of now, but you should check
+        // - it could still be smarter, for instance if an item is pushed onto
+        // an array, only enumerated accessors need to be notified, but if
+        // unshift is used then every item accessor needs to be notified
 
         // TODO: In order to handle the case where an array is mutated via
         // method but accessed elsewhere via arr[n], you'll need to track the

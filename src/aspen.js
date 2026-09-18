@@ -1277,28 +1277,8 @@ function shouldDoDeepUpdate(prevValue, currentValue) {
 
 let plannedRenders = 0;
 
-/**
- *
- * ACCESS
- *
- * - a primitive object property or array item is accessed
- * - a non-primitive object property or array item is accessed
- * - an object's or array's keys are listed
- * - an array's length is accessed
- * - a slice of an array is accessed (only the length of the slice is relevant)
- *
- * UPDATE
- *
- * - a primitive object property or array item is changed to a different primitive
- * - "" to a non-primitive
- * - a non-primitive object property or array item is set to a different non-primitive
- * - "" to a primitive (including null or undefined)
- *
- */
-
 const subscriptionsByKey = {};
 
-// DEV: handle instanceof (you'll need a proxy trap for Symbol.hasInstance)
 function createSubscription(signalId, path, options) {
   console.log("createSubscription called...");
   const { key, type } = renderStack.at(-1) || {};
@@ -1607,6 +1587,8 @@ class ProxyHandler {
     this.#path = path;
   }
 
+  // TODO: handle instanceof if possible (may be able to intercept
+  // Symbol.hasInstance)
   get(target, prop, receiver) {
     if (prop === SignalIdProperty) {
       return this.#signalId;
@@ -1635,22 +1617,20 @@ class ProxyHandler {
 
     createSubscription(this.#signalId, this.#path + "." + prop);
 
-    // DEV: explain
-
-    // DEV: does this break down for arrays of functions?
-    // - will prop be a number when accessing by index?
-    // - you'd have to check for number like strings too
-    if (!Array.isArray(target) || typeof value !== "function") {
+    // If an array method isn't being accessed then there's nothing left to
+    // do, so return the proxied value
+    if (
+      !Array.isArray(target) ||
+      /^[0-9]+$/.test(prop) ||
+      typeof value !== "function"
+    ) {
       return proxied;
     }
 
-    // DEV: stuff is gettin weird
-    // - why is reverse broken?
+    // Mutating array methods trigger the render cycle when called;
+    // non-mutating array methods create a subscription to array length
     return (...args) => {
       debug("calling proxied", prop);
-      console.log("typeof value", typeof value);
-      console.log("args:", args);
-      console.log("value:", value);
 
       // DEV: pretty sure this is taken care of now, but you should check
       // - it could still be smarter, for instance if an item is pushed onto
@@ -1662,7 +1642,8 @@ class ProxyHandler {
       // mutations that occur during method execution, and then let
       // subscribers know about them when the method is complete
 
-      // DEV: explain why calling this way
+      // It's important to call array methods with this syntax so that bindings
+      // work properly
       const result = target[prop](...args);
 
       if (
@@ -1695,14 +1676,12 @@ class ProxyHandler {
   // DEV: this could be more specific
   // - kind of the equivalent of slicing an array
   has(target, prop, receiver) {
-    // subscribe(this.#signalId, this.#path);
     createSubscription(this.#signalId, this.#path, { enumerated: true });
 
     return Reflect.has(target, prop, receiver);
   }
 
   ownKeys(target) {
-    // subscribe(this.#signalId, this.#path);
     createSubscription(this.#signalId, this.#path, { enumerated: true });
 
     return Reflect.ownKeys(target);
@@ -1740,14 +1719,11 @@ class ProxyHandler {
     return true;
   }
 
-  // TODO: Notify non-enumerated subs
   deleteProperty(target, prop) {
     Reflect.deleteProperty(target, prop, receiver);
 
     // DEV: this could also be more specific?
     doRenderCycle(this.#signalId, this.#path);
-
-    // notifySubscribers(this.#signalId, this.#path);
 
     return true;
   }

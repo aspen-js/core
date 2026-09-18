@@ -1223,21 +1223,6 @@ const enumeratedAccessByKey = {};
 // other references which frees them up for garbage collection here
 const signals = new WeakMap();
 
-function subscribe(signalId, path, prop) {
-  const { key, type } = renderStack.at(-1) || {};
-
-  if (key && type !== "peek") {
-    const lookup = prop ? accessByKey : enumeratedAccessByKey;
-    const fullPath = prop ? path + "." + prop : path;
-    const subscriberAccess = (lookup[key] ||= {});
-    const accessByPath = (subscriberAccess[signalId] ||= {});
-
-    if (!accessByPath[fullPath]) {
-      accessByPath[fullPath] = renderStack.at(-1);
-    }
-  }
-}
-
 const PathUnreachable = Symbol();
 
 // TODO: escape periods in property names
@@ -1416,6 +1401,7 @@ function doRenderCycle(signalId, path) {
 
       // TODO: Should sort by number of path segments instead
       // of length
+      // - will need to escape periods for this too
 
       // Sort tasks first so that the deferredTasks array is taken care of when
       // rendering completes
@@ -1464,114 +1450,12 @@ function shouldUpdate(subscription, value) {
         !isPlainObject(value) ||
         subscription.value !== Object.keys(value).length
       );
+    // TODO: Signals should be able to contain non-reactive non-plain objects (like
+    // Date class instances etc.)
     case "isObject":
       return !isPlainObject(value);
     default:
       throw Error("[Aspen] Unknown subscription type");
-  }
-}
-
-function notifySubscribers(signalId, path, prop, value) {
-  const { prevValues } = signals.get(signalId);
-  const plannedUpdatesByKey = {};
-
-  // Notify subscribers in enumeratedAccessByKey even if prev and current values
-  // are equal according to ===. For subscribers that enumerate object
-  // properties or array items, a value may have changed in a meaningful way
-  // even if it has the same reference, e.g. because of a call to .push on an
-  // array or the setting of an object property
-  [
-    ...Object.getOwnPropertySymbols(enumeratedAccessByKey),
-    ...Object.keys(enumeratedAccessByKey),
-  ].forEach((key) => {
-    const update = enumeratedAccessByKey[key]?.[signalId]?.[path];
-    if (update) {
-      plannedUpdatesByKey[key] = update;
-    }
-  });
-
-  // Notify subscribers in accessByKey only about meaningful changes to leaf
-  // nodes. A change is meaningful if:
-  // - prev and current primitive values are no longer equal
-  // - a value is changing from a primitive to a non-primitive value or vice
-  //   versa (changing from branch to leaf or leaf to branch)
-  // - a path has become unreachable
-  if (prop) {
-    const pathWithProp = path + "." + prop;
-    const keys = [
-      ...Object.getOwnPropertySymbols(accessByKey),
-      ...Object.keys(accessByKey),
-    ];
-
-    for (const key of keys) {
-      if (key in plannedUpdatesByKey) continue;
-
-      Object.entries(accessByKey[key]?.[signalId] || {}).forEach(
-        ([deepPath, update]) => {
-          if (deepPath === pathWithProp) {
-            if (shouldDoDeepUpdate(prevValues[pathWithProp], value)) {
-              plannedUpdatesByKey[key] = update;
-            }
-          } else if (deepPath.startsWith(pathWithProp + ".")) {
-            const pathToCheck = deepPath.slice(pathWithProp.length + 1);
-
-            if (
-              shouldDoDeepUpdate(
-                peek(prevValues[pathWithProp], pathToCheck),
-                peek(value, pathToCheck),
-              )
-            ) {
-              plannedUpdatesByKey[key] = update;
-            }
-          }
-        },
-      );
-    }
-  }
-
-  plannedRenders += Object.values(plannedUpdatesByKey).filter(
-    (update) => update.type === "component",
-  ).length;
-
-  // Schedule tasks defined outside of components. See comment below for why
-  // tasks must be scheduled before components render
-  Object.getOwnPropertySymbols(plannedUpdatesByKey).forEach((key) =>
-    plannedUpdatesByKey[key].onUpdate(),
-  );
-
-  Object.entries(plannedUpdatesByKey)
-    .sort(([a], [b]) => {
-      const isATask = a.includes("#task");
-      const isBTask = b.includes("#task");
-
-      // TODO: Should sort by number of path segments instead
-      // of length
-
-      // Sort tasks first so that the deferredTasks array is taken care of when
-      // rendering completes
-      return isATask && !isBTask
-        ? -1
-        : !isATask && isBTask
-          ? 1
-          : // After tasks, sort shorter keys first so that parent components
-            // render before their children
-            a.length - b.length;
-    })
-    .forEach(([key, update]) => {
-      // One last check to make sure the key hasn't been cleaned up
-      if (enumeratedAccessByKey[key] || accessByKey[key]) {
-        update.onUpdate({ plannedRenders });
-      }
-
-      if (update.type === "component") {
-        plannedRenders--;
-      }
-    });
-
-  if (plannedRenders === 0) {
-    while (deferredTasks.length) {
-      deferredTasks.shift()();
-    }
   }
 }
 

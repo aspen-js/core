@@ -1310,6 +1310,8 @@ function createSubscription(signalId, path, options) {
     }
   }
 
+  // DEV: subscriptions should be an array not an object
+
   // TODO: Not efficient data structures
   subscriptionsByKey[key] ||= {};
   subscriptionsByKey[key][signalId] ||= {};

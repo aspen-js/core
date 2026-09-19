@@ -1477,6 +1477,9 @@ class ProxyHandler {
     const value = Reflect.get(target, prop, receiver);
 
     if (Array.isArray(value) || isPlainObject(value)) {
+      // TODO: Figure out correct behavior when a signal wraps another signal
+      // - this is almost certainly not it
+      // - possibly structuredClone of the raw value
       if (typeof value[PathProperty] === "string") {
         proxied = value;
         proxied[PathProperty] = this.#path + "." + prop;
@@ -1507,15 +1510,9 @@ class ProxyHandler {
     return (...args) => {
       debug("calling proxied", prop);
 
-      // DEV: pretty sure this is taken care of now, but you should check
-      // - it could still be smarter, for instance if an item is pushed onto
+      // TODO: This could still be smarter, for instance if an item is pushed onto
       // an array, only enumerated accessors need to be notified, but if
       // unshift is used then every item accessor needs to be notified
-
-      // TODO: In order to handle the case where an array is mutated via
-      // method but accessed elsewhere via arr[n], you'll need to track the
-      // mutations that occur during method execution, and then let
-      // subscribers know about them when the method is complete
 
       // It's important to call array methods with this syntax so that bindings
       // work properly
@@ -1570,9 +1567,7 @@ class ProxyHandler {
 
     // DEV: since this is all synchronous, pretty sure you could just have a
     // global variable called "peeking"
-    renderStack.push({ type: "peek" });
     const propertyExists = prop in target;
-    renderStack.pop();
 
     Reflect.set(target, prop, value, receiver);
 
@@ -1649,13 +1644,6 @@ export function signal(initialValue) {
 
 const deferredTasks = [];
 const taskCallbacksByKey = {};
-
-// DEV: The prop resolution logic is important for tasks?
-// - Will you need to extend it?
-// - Otherwise, will there be issues if a task references a signal object
-// directly and not via something.object?
-// - this might only matter for arrays?
-// - what about unattached objects?
 
 // TODO: Allow returning a cleanup function
 export function task(callback) {

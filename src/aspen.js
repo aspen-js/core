@@ -1252,20 +1252,9 @@ function peek(obj, path) {
   return value;
 }
 
-function shouldDoDeepUpdate(prevValue, currentValue) {
-  if (isPlainObject(prevValue) && isPlainObject(currentValue)) {
-    return false;
-  } else {
-    return prevValue !== currentValue;
-  }
-}
-
-let plannedRenders = 0;
-
 const subscriptionsByKey = {};
 
 function createSubscription(signalId, path, options) {
-  console.log("createSubscription called...");
   const { key, type } = renderStack.at(-1) || {};
 
   if (!key || type === "peek") {
@@ -1320,7 +1309,9 @@ function createSubscription(signalId, path, options) {
   subscriptionsByKey[key][signalId][path] = subscription;
 }
 
-// DEV: explain
+// If a task run or a component render is skipped because the signal update
+// came from the previous task run or component render, its subscriptions still
+// have to be updated so they don't hold stale values
 function refreshSubscriptions(key) {
   const subscriptions = subscriptionsByKey[key];
 
@@ -1333,7 +1324,6 @@ function refreshSubscriptions(key) {
     Object.entries(subscriptions[signalId]).forEach(([path, subscription]) => {
       const value = peek(signals.get(signalId).rawValue, path);
 
-      // DEV: don't love this
       createSubscription(
         signalId,
         path,
@@ -1351,9 +1341,37 @@ function refreshSubscriptions(key) {
   });
 }
 
-function doRenderCycle(signalId, path) {
-  console.log("doRenderCycle called...");
+function shouldUpdate(subscription, value) {
+  switch (subscription.type) {
+    case "equality":
+      return subscription.value !== value;
+    case "length":
+      return (
+        !Array.isArray(value) ||
+        (subscription.slice
+          ? subscription.value !==
+            value.slice(subscription.slice.start, subscription.slice.end).length
+          : subscription.value !== value.length)
+      );
+    case "isArray":
+      return !Array.isArray(value);
+    case "size":
+      return (
+        !isPlainObject(value) ||
+        subscription.value !== Object.keys(value).length
+      );
+    // TODO: Signals should be able to contain non-reactive non-plain objects (like
+    // Date class instances etc.)
+    case "isObject":
+      return !isPlainObject(value);
+    default:
+      throw Error("[Aspen] Unknown subscription type");
+  }
+}
 
+let plannedRenders = 0;
+
+function doRenderCycle(signalId, path) {
   const plannedUpdatesByKey = {};
 
   [
@@ -1366,16 +1384,11 @@ function doRenderCycle(signalId, path) {
       return;
     }
 
-    console.log("paths:", Object.keys(subscriptions));
-
     for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
       if (pathToCheck.startsWith(path)) {
-        console.log("checking path", pathToCheck);
         const value = peek(signals.get(signalId).rawValue, pathToCheck);
-        console.log("value:", value);
 
         if (shouldUpdate(subscription, value)) {
-          console.log("updating...");
           plannedUpdatesByKey[key] = subscription.subscriber;
 
           return;
@@ -1428,34 +1441,6 @@ function doRenderCycle(signalId, path) {
     while (deferredTasks.length) {
       deferredTasks.shift()();
     }
-  }
-}
-
-function shouldUpdate(subscription, value) {
-  switch (subscription.type) {
-    case "equality":
-      return subscription.value !== value;
-    case "length":
-      return (
-        !Array.isArray(value) ||
-        (subscription.slice
-          ? subscription.value !==
-            value.slice(subscription.slice.start, subscription.slice.end).length
-          : subscription.value !== value.length)
-      );
-    case "isArray":
-      return !Array.isArray(value);
-    case "size":
-      return (
-        !isPlainObject(value) ||
-        subscription.value !== Object.keys(value).length
-      );
-    // TODO: Signals should be able to contain non-reactive non-plain objects (like
-    // Date class instances etc.)
-    case "isObject":
-      return !isPlainObject(value);
-    default:
-      throw Error("[Aspen] Unknown subscription type");
   }
 }
 
@@ -1577,10 +1562,6 @@ class ProxyHandler {
       return true;
     }
 
-    // DEV: this isn't used anymore?
-    const { prevValues } = signals.get(this.#signalId);
-    prevValues[this.#path + "." + prop] = peek(target, prop);
-
     // DEV: since this is all synchronous, pretty sure you could just have a
     // global variable called "peeking"
     renderStack.push({ type: "peek" });
@@ -1617,7 +1598,6 @@ const hookInitsByKey = {};
 
 let componentHookIndex = 0;
 
-// TODO: Seems like you could dry this up a bit
 export function signal(initialValue) {
   const currentKey =
     renderStack.at(-1)?.type === "component"
@@ -1641,7 +1621,6 @@ export function signal(initialValue) {
       );
 
       signals.set(symbol, {
-        prevValues: {},
         rawValue: root,
         signal: result,
       });
@@ -1654,7 +1633,6 @@ export function signal(initialValue) {
     result = new Proxy(root, new ProxyHandler(symbol, "[root]"));
 
     signals.set(symbol, {
-      prevValues: {},
       rawValue: root,
       signal: result,
     });
@@ -1673,13 +1651,6 @@ const taskCallbacksByKey = {};
 // - this might only matter for arrays?
 // - what about unattached objects?
 
-// DEV: The issue is that when a task run is skipped becuase the update came
-// from the task itself the task subscriptions in subscriptionsByKey hang on to
-// stale values
-// - a better data structure would make this unnecessary, but for now you can
-// just add a refresh subscriptions function
-// - this might come in handy when imiplementing computed
-
 // TODO: Allow returning a cleanup function
 export function task(callback) {
   const componentKey =
@@ -1687,7 +1658,8 @@ export function task(callback) {
       ? renderStack.at(-1).key
       : undefined;
 
-  const isFirstRender = !hookInitsByKey[componentKey]?.[componentHookIndex];
+  const isFirstRender =
+    componentKey && !hookInitsByKey[componentKey]?.[componentHookIndex];
   const taskKey = componentKey
     ? `${componentKey}#task-${componentHookIndex}`
     : Symbol();
@@ -1721,9 +1693,6 @@ export function task(callback) {
         }
       },
     });
-
-    // delete accessByKey[taskKey];
-    // delete enumeratedAccessByKey[taskKey];
 
     delete subscriptionsByKey[taskKey];
 

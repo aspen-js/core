@@ -167,14 +167,10 @@ __TEST__(
     await button.click();
     await button.click();
 
-    console.log("ALL LOGS:", logs);
-
     const filtered = logs.filter(
       (log) =>
         log.startsWith("the count is") || log === "[CounterWithTask] rendering",
     );
-
-    console.log("FILTERED IS", filtered);
 
     expect(filtered.length).toBe(6);
 

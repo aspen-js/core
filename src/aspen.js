@@ -1393,15 +1393,14 @@ function doRenderCycle(signalId, path, options) {
   const plannedUpdatesByKey = {};
   const addedOrRemoved = options?.added || options?.removed;
 
-  // DEV: use a labeled loop
-  [
+  outer: for (const key of [
     ...Object.getOwnPropertySymbols(subscriptionsByKey),
     ...Object.keys(subscriptionsByKey),
-  ].forEach((key) => {
+  ]) {
     const subscriptions = subscriptionsByKey[key][signalId];
 
     if (!subscriptions) {
-      return;
+      continue outer;
     }
 
     for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
@@ -1421,11 +1420,11 @@ function doRenderCycle(signalId, path, options) {
         if (shouldUpdate(subscription, value)) {
           plannedUpdatesByKey[key] = subscription.subscriber;
 
-          return;
+          continue outer;
         }
       }
     }
-  });
+  }
 
   plannedRenders += Object.values(plannedUpdatesByKey).filter(
     (update) => update.type === "component",

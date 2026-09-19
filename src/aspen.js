@@ -819,6 +819,12 @@ function cleanupChildren(key) {
   clearNested(key, taskCallbacksByKey, false);
 }
 
+/**
+ * A signal object might be completely replaced, e.g. `$myObj.val = {...}`. If
+ * that object is passed to a component as a prop, the component might rerender
+ * while its parent might not. This function ensures the child component
+ * receives the latest object reference in that case.
+ */
 function resolveSignalProps(props) {
   return Object.fromEntries(
     Object.entries(props).map(([key, value]) => {

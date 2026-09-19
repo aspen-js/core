@@ -46,8 +46,8 @@ export function Name({ $user }) {
   return html`
     <input
       placeholder="Name"
-      value=${$user.val.name}
-      oninput=${(e) => ($user.val.name = e.target.value)}
+      value=${$user.name}
+      oninput=${(e) => ($user.name = e.target.value)}
     />
   `;
 }
@@ -58,8 +58,8 @@ export function Password({ $user }) {
   return html`
     <input
       placeholder="Password"
-      value=${$user.val.password}
-      oninput=${(e) => ($user.val.password = e.target.value)}
+      value=${$user.password}
+      oninput=${(e) => ($user.password = e.target.value)}
     />
   `;
 }
@@ -70,8 +70,8 @@ export function Email({ $user }) {
   return html`<input
     placeholder="Email"
     type="email"
-    value=${$user.val.contact.email}
-    oninput=${(e) => ($user.val.contact.email = e.target.value)}
+    value=${$user.contact.email}
+    oninput=${(e) => ($user.contact.email = e.target.value)}
   />`;
 }
 
@@ -81,8 +81,8 @@ export function Phone({ $user }) {
   return html`
     <input
       placeholder="Phone"
-      value=${$user.val.contact.phone}
-      oninput=${(e) => ($user.val.contact.phone = e.target.value)}
+      value=${$user.contact.phone}
+      oninput=${(e) => ($user.contact.phone = e.target.value)}
     />
   `;
 }
@@ -103,10 +103,10 @@ export function UserCard() {
 
   return html`
     <div style="display: flex; flex-direction: column; width: 248px; gap: 12px">
-      <Name $user=${$user} />
-      <Password $user=${$user} />
-      <Email $user=${$user} />
-      <Phone $user=${$user} />
+      <Name $user=${$user.val} />
+      <Password $user=${$user.val} />
+      <Email $user=${$user.val} />
+      <Phone $user=${$user.val} />
       <div style="display: flex; flex-direction: row; gap: 12px;">
         <button
           style="flex: 1;"
@@ -249,7 +249,9 @@ __TEST__(
 
     expect(logs.length).toBe(3);
     expect(logs[0]).toBe("[Name] rendering");
+    expect(name).toHaveValue("");
     expect(logs[1]).toBe("[Phone] rendering");
+    expect(phone).toHaveValue("");
     expect(logs[2]).toBe(
       `[task] user: ${JSON.stringify(
         {

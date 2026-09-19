@@ -1231,12 +1231,17 @@ const signals = new WeakMap();
 
 const PathUnreachable = Symbol();
 
-// TODO: escape periods in property names
+let peeking = false;
 
-// Resolve a path within a signal object without subscribing to updates
+/**
+ * Resolve a path within an object. Will not create new subscriptions if the
+ * object is a signal
+ */
 function peek(obj, path) {
-  renderStack.push({ type: "peek" });
+  peeking = true;
 
+  // TODO: escape periods in property names
+  // - a getPathParts fn is probably what you need
   const parts = path.split(".").filter(Boolean);
   if (parts[0] === "[root]") {
     parts.shift();
@@ -1253,7 +1258,7 @@ function peek(obj, path) {
     }
   });
 
-  renderStack.pop();
+  peeking = false;
 
   return value;
 }
@@ -1261,9 +1266,9 @@ function peek(obj, path) {
 const subscriptionsByKey = {};
 
 function createSubscription(signalId, path, options) {
-  const { key, type } = renderStack.at(-1) || {};
+  const { key } = renderStack.at(-1) || {};
 
-  if (!key || type === "peek") {
+  if (!key || peeking) {
     return;
   }
 
@@ -1391,6 +1396,8 @@ function doRenderCycle(signalId, path) {
     }
 
     for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
+      // DEV: when the flag is set for adding a property
+      // (pathToCheck.startsWith(path) && subscription.enumerated) || pathToCheck.startsWith(path + "." + prop)
       if (pathToCheck.startsWith(path)) {
         const value = peek(signals.get(signalId).rawValue, pathToCheck);
 
@@ -1547,6 +1554,7 @@ class ProxyHandler {
 
   // DEV: this could be more specific
   // - kind of the equivalent of slicing an array
+  // - a new subscription type?
   has(target, prop, receiver) {
     createSubscription(this.#signalId, this.#path, { enumerated: true });
 
@@ -1565,8 +1573,6 @@ class ProxyHandler {
       return true;
     }
 
-    // DEV: since this is all synchronous, pretty sure you could just have a
-    // global variable called "peeking"
     const propertyExists = prop in target;
 
     Reflect.set(target, prop, value, receiver);
@@ -1580,6 +1586,7 @@ class ProxyHandler {
           // subscribers listening for changes in object size at this.#path
           this.#path + "." + prop
         : this.#path,
+      // { added: prop }
     );
 
     return true;
@@ -1589,7 +1596,12 @@ class ProxyHandler {
     Reflect.deleteProperty(target, prop, receiver);
 
     // DEV: this could also be more specific?
-    doRenderCycle(this.#signalId, this.#path);
+    // - related to has and the set problem
+    doRenderCycle(
+      this.#signalId,
+      this.#path,
+      // { removed: prop }
+    );
 
     return true;
   }

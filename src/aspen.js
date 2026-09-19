@@ -1381,7 +1381,9 @@ let plannedRenders = 0;
 
 function doRenderCycle(signalId, path, options) {
   const plannedUpdatesByKey = {};
+  const addedOrRemoved = options?.added || options?.removed;
 
+  // DEV: use a labeled loop
   [
     ...Object.getOwnPropertySymbols(subscriptionsByKey),
     ...Object.keys(subscriptionsByKey),
@@ -1394,21 +1396,21 @@ function doRenderCycle(signalId, path, options) {
 
     for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
       if (
-        // DEV: explain
+        // Check for subscriptions to the changed value as well as any nested
+        // subscriptions
         pathToCheck.startsWith(
-          path +
-            (options?.added || options?.removed
-              ? "." + options?.added || options?.removed
-              : ""),
+          path + (addedOrRemoved ? "." + addedOrRemoved : ""),
         ) ||
-        ((options?.added || options?.removed) && pathToCheck === path)
+        // If a property was added/removed, subscriptions to the parent object
+        // need to be checked, but not siblings of the property that was
+        // added/removed
+        (addedOrRemoved && pathToCheck === path)
       ) {
         const value = peek(signals.get(signalId).rawValue, pathToCheck);
 
         if (shouldUpdate(subscription, value)) {
           plannedUpdatesByKey[key] = subscription.subscriber;
 
-          // DEV: this is an odd pattern, explain
           return;
         }
       }

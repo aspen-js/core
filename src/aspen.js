@@ -800,9 +800,7 @@ function cleanup(key) {
   clearNested(key, propsByKey);
   clearNested(key, hookInitsByKey);
   clearNested(key, componentsByKey);
-  clearNested(key, accessByKey);
   clearNested(key, subscriptionsByKey);
-  clearNested(key, enumeratedAccessByKey);
   clearNested(key, taskCallbacksByKey);
 }
 
@@ -813,9 +811,7 @@ function cleanupChildren(key) {
   clearNested(key, propsByKey, false);
   clearNested(key, hookInitsByKey, false);
   clearNested(key, componentsByKey, false);
-  clearNested(key, accessByKey, false);
   clearNested(key, subscriptionsByKey, false);
-  clearNested(key, enumeratedAccessByKey, false);
   clearNested(key, taskCallbacksByKey, false);
 }
 
@@ -885,8 +881,7 @@ function render(key, node, depth = 0, domMutations = []) {
   } else {
     componentsByKey[key] = node;
 
-    delete accessByKey[key];
-    delete enumeratedAccessByKey[key];
+    delete subscriptionsByKey[key];
 
     renderStack.push({
       type: "component",
@@ -1219,19 +1214,8 @@ function render(key, node, depth = 0, domMutations = []) {
   }
 }
 
-// TODO: probably wouldn't be too hard to combine these
-
-const accessByKey = {};
-const enumeratedAccessByKey = {};
-
-// A weak map removes the need to manually cleanup signal metadata for
-// unmounted signals. The cleanup and cleanupChildren functions remove all
-// other references which frees them up for garbage collection here
-const signals = new WeakMap();
-
-const PathUnreachable = Symbol();
-
 let peeking = false;
+const PathUnreachable = Symbol();
 
 /**
  * Resolve a path within an object. Will not create new subscriptions if the
@@ -1263,6 +1247,10 @@ function peek(obj, path) {
   return value;
 }
 
+// A weak map removes the need to manually cleanup signal metadata for
+// unmounted signals. The cleanup and cleanupChildren functions remove all
+// other references which frees them up for garbage collection here
+const signals = new WeakMap();
 const subscriptionsByKey = {};
 
 function createSubscription(signalId, path, options) {

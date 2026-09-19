@@ -1549,11 +1549,8 @@ class ProxyHandler {
     };
   }
 
-  // DEV: this could be more specific
-  // - kind of the equivalent of slicing an array
-  // - a new subscription type?
   has(target, prop, receiver) {
-    createSubscription(this.#signalId, this.#path, { enumerated: true });
+    createSubscription(this.#signalId, this.#path, { has: prop });
 
     return Reflect.has(target, prop, receiver);
   }

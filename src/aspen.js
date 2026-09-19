@@ -1251,26 +1251,11 @@ function peek(obj, path) {
 // unmounted signals. The cleanup and cleanupChildren functions remove all
 // other references which frees them up for garbage collection here
 const signals = new WeakMap();
-const subscriptionsByKey = {};
 
-// DEV: not correct to key subscriptions by path?
-// - or maybe it is, but subscriptions like size should not be written over by
-// ones like has
-// - technically size would encompass has since JS doesn't support adding and
-// removing properties at the same time, but you should probably not key
-// subscriptions by type
-// - shouldn't actually be that much more complicated since you can count on
-// them getting blown away on each render
-function createSubscription(signalId, path, options) {
-  const { key } = renderStack.at(-1) || {};
-
-  if (!key || peeking) {
-    return;
-  }
-
+function createSubscription(subscriber, signalId, path, options) {
   const value = peek(signals.get(signalId).rawValue, path);
-  let subscription;
 
+  let subscription;
   if (isPrimitive(value)) {
     subscription = {
       type: "equality",
@@ -1310,22 +1295,49 @@ function createSubscription(signalId, path, options) {
     }
   }
 
-  // DEV: subscriptions should be an array not an object
+  return {
+    ...subscription,
+    path,
+    subscriber,
+  };
+}
+
+const subscriptionsByKey = {};
+
+// DEV: not correct to key subscriptions by path?
+// - or maybe it is, but subscriptions like size should not be written over by
+// ones like has
+// - technically size would encompass has since JS doesn't support adding and
+// removing properties at the same time, but you should probably not key
+// subscriptions by type
+// - shouldn't actually be that much more complicated since you can count on
+// them getting blown away on each render
+function subscribe(signalId, path, options) {
+  const { key } = renderStack.at(-1) || {};
+
+  if (!key || peeking) {
+    return;
+  }
+
+  const subscription = createSubscription(
+    renderStack.at(-1),
+    signalId,
+    path,
+    options,
+  );
 
   // TODO: Not the most efficient data structure
   subscriptionsByKey[key] ||= {};
   subscriptionsByKey[key][signalId] ||= [];
-  subscriptionsByKey[key][signalId].push({
-    ...subscription,
-    path,
-    subscriber: renderStack.at(-1),
-  });
+  subscriptionsByKey[key][signalId].push(subscription);
 }
+
+// DEV: really don't like how these APIs are turning out
 
 // If a task run or a component render is skipped because the signal update
 // came from the previous task run or component render, its subscriptions still
 // have to be updated so they don't hold stale values
-function refreshSubscriptions(key) {
+function refreshSubscriptions(key, subscriber) {
   const subscriptions = subscriptionsByKey[key];
 
   if (!subscriptions?.length) {
@@ -1335,28 +1347,28 @@ function refreshSubscriptions(key) {
   // DEV: whoops, you forgat non-task subscriptions
   const signalIds = Object.getOwnPropertySymbols(subscriptions);
   signalIds.forEach((signalId) => {
-    subscriptions[signalId].forEach((subscription) => {
-      const value = peek(signals.get(signalId).rawValue, subscription.path);
+    subscriptions[signalId] = subscriptions[signalId].subscriptions?.map(
+      (subscription) => {
+        const value = peek(signals.get(signalId).rawValue, subscription.path);
 
-      // DEV: not quite right?
-      // - you'll need to map
-      // - this could actually be pretty tricky
-      createSubscription(
-        signalId,
-        path,
-        isPrimitive(value)
-          ? undefined
-          : subscription.type === "has"
-            ? { has: subscription.has }
-            : Array.isArray(value)
-              ? subscription.type === "length"
-                ? { enumerated: true, slice: subscription.slice }
-                : undefined
-              : subscription.type === "size"
-                ? { enumerated: true }
-                : undefined,
-      );
-    });
+        return createSubscription(
+          subscriber,
+          signalId,
+          path,
+          isPrimitive(value)
+            ? undefined
+            : subscription.type === "has"
+              ? { has: subscription.has }
+              : Array.isArray(value)
+                ? subscription.type === "length"
+                  ? { enumerated: true, slice: subscription.slice }
+                  : undefined
+                : subscription.type === "size"
+                  ? { enumerated: true }
+                  : undefined,
+        );
+      },
+    );
   });
 }
 
@@ -1523,7 +1535,7 @@ class ProxyHandler {
       proxied = value;
     }
 
-    createSubscription(this.#signalId, this.#path + "." + prop);
+    subscribe(this.#signalId, this.#path + "." + prop);
 
     // If an array method isn't being accessed then there's nothing left to
     // do, so return the proxied value
@@ -1562,7 +1574,7 @@ class ProxyHandler {
 
         return result;
       } else {
-        createSubscription(
+        subscribe(
           this.#signalId,
           this.#path,
           prop === "slice"
@@ -1576,13 +1588,13 @@ class ProxyHandler {
   }
 
   has(target, prop, receiver) {
-    createSubscription(this.#signalId, this.#path, { has: prop });
+    subscribe(this.#signalId, this.#path, { has: prop });
 
     return Reflect.has(target, prop, receiver);
   }
 
   ownKeys(target) {
-    createSubscription(this.#signalId, this.#path, { enumerated: true });
+    subscribe(this.#signalId, this.#path, { enumerated: true });
 
     return Reflect.ownKeys(target);
   }
@@ -1692,7 +1704,7 @@ export function task(callback) {
       key: taskKey,
       onUpdate: () => {
         if (renderStack.at(-1)?.key === taskKey) {
-          refreshSubscriptions(taskKey);
+          refreshSubscriptions(taskKey, renderStack.at(-1));
 
           // Prevent infinite recursion by doing nothing if the update happened
           // during the task itself

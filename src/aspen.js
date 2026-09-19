@@ -1328,7 +1328,7 @@ function createSubscription(signalId, path, options) {
 function refreshSubscriptions(key) {
   const subscriptions = subscriptionsByKey[key];
 
-  if (!subscriptions) {
+  if (!subscriptions?.length) {
     return;
   }
 

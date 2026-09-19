@@ -1338,37 +1338,39 @@ function subscribe(signalId, path, options) {
 // came from the previous task run or component render, its subscriptions still
 // have to be updated so they don't hold stale values
 function refreshSubscriptions(key, subscriber) {
+  console.log("calling refresh subscriptions");
   const subscriptions = subscriptionsByKey[key];
 
-  if (!subscriptions?.length) {
+  if (!subscriptions) {
     return;
   }
 
-  // DEV: whoops, you forgat non-task subscriptions
-  const signalIds = Object.getOwnPropertySymbols(subscriptions);
+  const signalIds = [
+    ...Object.getOwnPropertySymbols(subscriptions),
+    ...Object.keys(subscriptions),
+  ];
   signalIds.forEach((signalId) => {
-    subscriptions[signalId] = subscriptions[signalId].subscriptions?.map(
-      (subscription) => {
-        const value = peek(signals.get(signalId).rawValue, subscription.path);
+    console.log("refreshing subscriptions...");
+    subscriptions[signalId] = subscriptions[signalId]?.map((subscription) => {
+      const value = peek(signals.get(signalId).rawValue, subscription.path);
 
-        return createSubscription(
-          subscriber,
-          signalId,
-          path,
-          isPrimitive(value)
-            ? undefined
-            : subscription.type === "has"
-              ? { has: subscription.has }
-              : Array.isArray(value)
-                ? subscription.type === "length"
-                  ? { enumerated: true, slice: subscription.slice }
-                  : undefined
-                : subscription.type === "size"
-                  ? { enumerated: true }
-                  : undefined,
-        );
-      },
-    );
+      return createSubscription(
+        subscriber,
+        signalId,
+        subscription.path,
+        isPrimitive(value)
+          ? undefined
+          : subscription.type === "has"
+            ? { has: subscription.has }
+            : Array.isArray(value)
+              ? subscription.type === "length"
+                ? { enumerated: true, slice: subscription.slice }
+                : undefined
+              : subscription.type === "size"
+                ? { enumerated: true }
+                : undefined,
+      );
+    });
   });
 }
 

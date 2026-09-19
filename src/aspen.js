@@ -1253,6 +1253,14 @@ function peek(obj, path) {
 const signals = new WeakMap();
 const subscriptionsByKey = {};
 
+// DEV: not correct to key subscriptions by path?
+// - or maybe it is, but subscriptions like size should not be written over by
+// ones like has
+// - technically size would encompass has since JS doesn't support adding and
+// removing properties at the same time, but you should probably not key
+// subscriptions by type
+// - shouldn't actually be that much more complicated since you can count on
+// them getting blown away on each render
 function createSubscription(signalId, path, options) {
   const { key } = renderStack.at(-1) || {};
 

@@ -1379,7 +1379,7 @@ function shouldUpdate(subscription, value) {
 
 let plannedRenders = 0;
 
-function doRenderCycle(signalId, path) {
+function doRenderCycle(signalId, path, options) {
   const plannedUpdatesByKey = {};
 
   [
@@ -1393,14 +1393,22 @@ function doRenderCycle(signalId, path) {
     }
 
     for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
-      // DEV: when the flag is set for adding a property
-      // (pathToCheck.startsWith(path) && subscription.enumerated) || pathToCheck.startsWith(path + "." + prop)
-      if (pathToCheck.startsWith(path)) {
+      if (
+        // DEV: explain
+        pathToCheck.startsWith(
+          path +
+            (options?.added || options?.removed
+              ? "." + options?.added || options?.removed
+              : ""),
+        ) ||
+        ((options?.added || options?.removed) && pathToCheck === path)
+      ) {
         const value = peek(signals.get(signalId).rawValue, pathToCheck);
 
         if (shouldUpdate(subscription, value)) {
           plannedUpdatesByKey[key] = subscription.subscriber;
 
+          // DEV: this is an odd pattern, explain
           return;
         }
       }
@@ -1567,21 +1575,15 @@ class ProxyHandler {
       return true;
     }
 
-    const propertyExists = prop in target;
+    const propertyExisted = prop in target;
 
     Reflect.set(target, prop, value, receiver);
 
-    // DEV: this will still sometimes run unnecessary checks for siblings.
-    // Could probably fix this with an options arg
-    doRenderCycle(
-      this.#signalId,
-      propertyExists
-        ? // If the proerty was already present in the object there's no need to notify
-          // subscribers listening for changes in object size at this.#path
-          this.#path + "." + prop
-        : this.#path,
-      // { added: prop }
-    );
+    if (propertyExisted) {
+      doRenderCycle(this.#signalId, this.#path + "." + prop);
+    } else {
+      doRenderCycle(this.#signalId, this.#path, { added: prop });
+    }
 
     return true;
   }
@@ -1589,13 +1591,7 @@ class ProxyHandler {
   deleteProperty(target, prop) {
     Reflect.deleteProperty(target, prop, receiver);
 
-    // DEV: this could also be more specific?
-    // - related to has and the set problem
-    doRenderCycle(
-      this.#signalId,
-      this.#path,
-      // { removed: prop }
-    );
+    doRenderCycle(this.#signalId, this.#path, { removed: prop });
 
     return true;
   }

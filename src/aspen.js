@@ -1265,14 +1265,17 @@ function createSubscription(signalId, path, options) {
 
   if (isPrimitive(value)) {
     subscription = {
-      subscriber: renderStack.at(-1),
       type: "equality",
       value,
+    };
+  } else if (typeof options?.has === "string") {
+    subscription = {
+      type: "has",
+      value: options.has in value,
     };
   } else if (Array.isArray(value)) {
     if (options?.enumerated) {
       subscription = {
-        subscriber: renderStack.at(-1),
         type: "length",
         value: options?.slice
           ? value.slice(options.slice.start, options.slice.end).length
@@ -1281,7 +1284,6 @@ function createSubscription(signalId, path, options) {
       };
     } else {
       subscription = {
-        subscriber: renderStack.at(-1),
         type: "isArray",
         value: true,
       };
@@ -1289,13 +1291,11 @@ function createSubscription(signalId, path, options) {
   } else {
     if (options?.enumerated) {
       subscription = {
-        subscriber: renderStack.at(-1),
         type: "size",
         value: Object.keys(value).length,
       };
     } else {
       subscription = {
-        subscriber: renderStack.at(-1),
         type: "isObject",
         value: true,
       };
@@ -1305,7 +1305,10 @@ function createSubscription(signalId, path, options) {
   // TODO: Not efficient data structures
   subscriptionsByKey[key] ||= {};
   subscriptionsByKey[key][signalId] ||= {};
-  subscriptionsByKey[key][signalId][path] = subscription;
+  subscriptionsByKey[key][signalId][path] = {
+    ...subscription,
+    subscriber: renderStack.at(-1),
+  };
 }
 
 // If a task run or a component render is skipped because the signal update
@@ -1328,13 +1331,15 @@ function refreshSubscriptions(key) {
         path,
         isPrimitive(value)
           ? undefined
-          : Array.isArray(value)
-            ? subscription.type === "length"
-              ? { enumerated: true, slice: subscription.slice }
-              : undefined
-            : subscription.type === "size"
-              ? { enumerated: true }
-              : undefined,
+          : subscription.type === "has"
+            ? { has: subscription.has }
+            : Array.isArray(value)
+              ? subscription.type === "length"
+                ? { enumerated: true, slice: subscription.slice }
+                : undefined
+              : subscription.type === "size"
+                ? { enumerated: true }
+                : undefined,
       );
     });
   });
@@ -1344,6 +1349,10 @@ function shouldUpdate(subscription, value) {
   switch (subscription.type) {
     case "equality":
       return subscription.value !== value;
+    case "has":
+      return (
+        isPrimitive(value) || subscription.value !== subscription.has in value
+      );
     case "length":
       return (
         !Array.isArray(value) ||

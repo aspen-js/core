@@ -1252,6 +1252,9 @@ function peek(obj, path) {
 // other references which frees them up for garbage collection here
 const signals = new WeakMap();
 
+/**
+ * Creates a subsciption object but doesn't subscribe to signal updates
+ */
 function createSubscription(subscriber, signalId, path, options) {
   const value = peek(signals.get(signalId).rawValue, path);
 
@@ -1304,58 +1307,45 @@ function createSubscription(subscriber, signalId, path, options) {
 
 const subscriptionsByKey = {};
 
-// DEV: not correct to key subscriptions by path?
-// - or maybe it is, but subscriptions like size should not be written over by
-// ones like has
-// - technically size would encompass has since JS doesn't support adding and
-// removing properties at the same time, but you should probably not key
-// subscriptions by type
-// - shouldn't actually be that much more complicated since you can count on
-// them getting blown away on each render
+/**
+ * Subscribes the currently running component or task to signal updates
+ */
 function subscribe(signalId, path, options) {
-  const { key } = renderStack.at(-1) || {};
+  const subscriber = renderStack.at(-1);
 
-  if (!key || peeking) {
+  if (!subscriber || peeking) {
     return;
   }
 
-  const subscription = createSubscription(
-    renderStack.at(-1),
-    signalId,
-    path,
-    options,
-  );
+  const subscription = createSubscription(subscriber, signalId, path, options);
 
   // TODO: Not the most efficient data structure
-  subscriptionsByKey[key] ||= {};
-  subscriptionsByKey[key][signalId] ||= [];
-  subscriptionsByKey[key][signalId].push(subscription);
+  subscriptionsByKey[subscriber.key] ||= {};
+  subscriptionsByKey[subscriber.key][signalId] ||= [];
+  subscriptionsByKey[subscriber.key][signalId].push(subscription);
 }
 
-// DEV: really don't like how these APIs are turning out
-
-// If a task run or a component render is skipped because the signal update
-// came from the previous task run or component render, its subscriptions still
-// have to be updated so they don't hold stale values
-function refreshSubscriptions(key, subscriber) {
-  console.log("calling refresh subscriptions");
+/**
+ * If a task run or a component render is skipped because the signal update
+ * came from the previous task run or component render, its subscriptions still
+ * have to be updated so they don't hold stale values
+ */
+function refreshSubscriptions(key) {
   const subscriptions = subscriptionsByKey[key];
 
   if (!subscriptions) {
     return;
   }
 
-  const signalIds = [
+  [
     ...Object.getOwnPropertySymbols(subscriptions),
     ...Object.keys(subscriptions),
-  ];
-  signalIds.forEach((signalId) => {
-    console.log("refreshing subscriptions...");
+  ].forEach((signalId) => {
     subscriptions[signalId] = subscriptions[signalId]?.map((subscription) => {
       const value = peek(signals.get(signalId).rawValue, subscription.path);
 
       return createSubscription(
-        subscriber,
+        subscription.subscriber,
         signalId,
         subscription.path,
         isPrimitive(value)
@@ -1706,7 +1696,7 @@ export function task(callback) {
       key: taskKey,
       onUpdate: () => {
         if (renderStack.at(-1)?.key === taskKey) {
-          refreshSubscriptions(taskKey, renderStack.at(-1));
+          refreshSubscriptions(taskKey);
 
           // Prevent infinite recursion by doing nothing if the update happened
           // during the task itself

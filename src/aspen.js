@@ -1312,13 +1312,14 @@ function createSubscription(signalId, path, options) {
 
   // DEV: subscriptions should be an array not an object
 
-  // TODO: Not efficient data structures
+  // TODO: Not the most efficient data structure
   subscriptionsByKey[key] ||= {};
-  subscriptionsByKey[key][signalId] ||= {};
-  subscriptionsByKey[key][signalId][path] = {
+  subscriptionsByKey[key][signalId] ||= [];
+  subscriptionsByKey[key][signalId].push({
     ...subscription,
+    path,
     subscriber: renderStack.at(-1),
-  };
+  });
 }
 
 // If a task run or a component render is skipped because the signal update
@@ -1331,11 +1332,15 @@ function refreshSubscriptions(key) {
     return;
   }
 
+  // DEV: whoops, you forgat non-task subscriptions
   const signalIds = Object.getOwnPropertySymbols(subscriptions);
   signalIds.forEach((signalId) => {
-    Object.entries(subscriptions[signalId]).forEach(([path, subscription]) => {
-      const value = peek(signals.get(signalId).rawValue, path);
+    subscriptions[signalId].forEach((subscription) => {
+      const value = peek(signals.get(signalId).rawValue, subscription.path);
 
+      // DEV: not quite right?
+      // - you'll need to map
+      // - this could actually be pretty tricky
       createSubscription(
         signalId,
         path,
@@ -1399,11 +1404,13 @@ function doRenderCycle(signalId, path, options) {
   ]) {
     const subscriptions = subscriptionsByKey[key][signalId];
 
-    if (!subscriptions) {
+    if (!subscriptions?.length) {
       continue outer;
     }
 
-    for (const [pathToCheck, subscription] of Object.entries(subscriptions)) {
+    for (const subscription of subscriptions) {
+      const pathToCheck = subscription.path;
+
       if (
         // Check for subscriptions to the changed value as well as any nested
         // subscriptions
